@@ -81,21 +81,27 @@ pcclResult_t pcclConnect(pcclComm_t *communicator) {
     PCCL_VALIDATE(communicator->ccoip_client == nullptr, pcclInvalidUsage);
     communicator->ccoip_client = std::make_unique<ccoip::CCoIPClient>(communicator->params.master_address,
                                                                       communicator->params.peer_group);
+    
+    pcclResult_t status = pcclSuccess;
     if (!communicator->ccoip_client->connect()) {
-        communicator->ccoip_client = nullptr; // reset ccoip_client to allow for reconnection
         if (!communicator->ccoip_client->interrupt()) [[unlikely]] {
-            return pcclInternalError;
+            status = pcclInternalError;
+            goto cleanup;
         }
         if (!communicator->ccoip_client->join()) [[unlikely]] {
-            return pcclInternalError;
+            status = pcclInternalError;
+            goto cleanup;
         }
-        return pcclMasterConnectionFailed;
+        status = pcclMasterConnectionFailed;
+        goto cleanup;
     }
     if (!communicator->ccoip_client->updateTopology()) [[unlikely]] {
-        communicator->ccoip_client = nullptr; // reset ccoip_client to allow for reconnection
-        return pcclMasterConnectionFailed;
+        status = pcclMasterConnectionFailed;
+        goto cleanup;
     }
-    return pcclSuccess;
+    cleanup:
+    communicator->ccoip_client = nullptr;
+    return status;
 }
 
 static std::optional<ccoip::ccoip_data_type_t> getCCoIPDataType(const pcclDataType_t datatype) {

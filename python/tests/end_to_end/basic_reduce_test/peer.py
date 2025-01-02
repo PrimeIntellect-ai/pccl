@@ -26,6 +26,7 @@ def main():
     for attempt in range(n_attempts):
         try:
             communicator.connect()
+            break
         except PCCLError as e:
             print(f"Failed to connect to the master node: {e}; (Attempt {attempt + 1}/{n_attempts})")
             sleep(1)
