@@ -38,17 +38,26 @@ class CMakeBuildExecutor(build_ext):
 
         output_dir = os.path.abspath(os.path.join(self.build_lib, "pccl"))
 
+        # Get build type
         release_type = "Release"
-
         if os.environ.get('PCCL_ENABLE_DEBUG_SYMBOLS', None) is not None:
             release_type = "Debug"
 
         if os.environ.get('PCCL_REL_WITH_DEBUG_SYMBOLS', None) is not None:
             release_type = "RelWithDebInfo"
 
+        # Get C and CXX compiler
+        c_compiler = os.environ.get('CC', None)
+        cxx_compiler = os.environ.get('CXX', None)
+
+        # Prepare cmake arguments
         cmake_args = [
             f'-DCMAKE_BUILD_TYPE={release_type}',  # Specify the build type
         ]
+        if c_compiler is not None:
+            cmake_args += [f'-DCMAKE_C_COMPILER={c_compiler}']
+        if cxx_compiler is not None:
+            cmake_args += [f'-DCMAKE_CXX_COMPILER={cxx_compiler}']
 
         # Probe configure to detect the cmake generator
         print("Probe configure to detect the cmake generator...")
