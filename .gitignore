@@ -5,3 +5,7 @@ python/framework/pccl/__pycache__/
 python/framework/build/
 python/framework/dist/
 python/framework/pccl.egg-info/
+
+*.pyc
+mnist_model.pth
+
