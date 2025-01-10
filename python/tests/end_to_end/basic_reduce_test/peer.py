@@ -38,7 +38,7 @@ def main():
         assert False, f"(RANK={RANK}) Failed to connect to the master node"
     logging.info(f"(RANK={RANK}) Connected to the master node")
 
-    world_size: int = communicator.get_attribute(Attribute.CURRENT_WORLD_SIZE)
+    world_size: int = communicator.current_world_size()
 
     n_performed_steps = 0
     i = 0
@@ -46,7 +46,7 @@ def main():
         if i > 0 or world_size == 1:
             logging.info(f"(RANK={RANK}, it={i}) update_topology()")
             communicator.update_topology()
-        world_size = communicator.get_attribute(Attribute.CURRENT_WORLD_SIZE)
+        world_size = communicator.current_world_size()
 
         if world_size < 2:
             sleep(1)

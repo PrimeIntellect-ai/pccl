@@ -153,7 +153,7 @@ def main():
                 log_debug(f"(RANK={RANK}, it={i}) update_topology()")
                 communicator.update_topology()
 
-            world_size = communicator.get_attribute(Attribute.CURRENT_WORLD_SIZE)
+            world_size = communicator.current_world_size()
 
             if world_size < 2:
                 sleep(1)

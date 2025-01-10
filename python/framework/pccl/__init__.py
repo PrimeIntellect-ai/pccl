@@ -240,11 +240,15 @@ class Communicator:
     def __del__(self):
         C.pcclDestroyCommunicator(self._comm[0])
 
-    def get_attribute(self, attribute: Attribute) -> int:
+    def _get_attribute(self, attribute: Attribute) -> int:
         """Get a communicator attribute."""
         value = ffi.new('int*')
         PCCLError.check(C.pcclGetAttribute(self._comm[0], attribute.value, value))
         return value[0]
+    
+    def current_world_size(self) -> int:
+        """Get the current world size of the communicator."""
+        return self._get_attribute(Attribute.CURRENT_WORLD_SIZE)
 
     def save_topology_graph(self, filename: str):
         """Save the topology graph into a graphviz dot file for visualization."""
