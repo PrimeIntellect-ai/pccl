@@ -326,6 +326,9 @@ class Communicator:
         sync_info: ffi.CData = ffi.new('pcclSharedStateSyncInfo_t*')
         PCCLError.check(C.pcclSynchronizeSharedState(self._comm[0], shared_state._state, sync_info))
         return SharedStateSyncInfo(sync_info.tx_bytes, sync_info.rx_bytes)
+    
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({' '.join(f'{attr}={self._get_attribute(attr)}' for attr in Attribute)})"
 
 
 class MasterNode:
