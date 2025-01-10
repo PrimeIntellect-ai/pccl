@@ -38,20 +38,20 @@ namespace ccoip {
     private:
         void sendP2PConnectionInformation();
 
-        void checkP2PConnectionsEstablished();
+        [[nodiscard]] bool checkP2PConnectionsEstablished();
+
+        [[nodiscard]] bool checkSyncSharedStateConsensus(uint32_t peer_group);
+
+        [[nodiscard]] bool checkSyncSharedStateCompleteConsensus(uint32_t peer_group);
+
+        [[nodiscard]] bool checkCollectiveCommsInitiateConsensus(uint32_t peer_group, uint64_t tag, bool topology_changed);
+
+        [[nodiscard]] bool checkCollectiveCommsCompleteConsensus(uint32_t peer_group, uint64_t tag);
 
         void checkAcceptNewPeersConsensus();
 
         /// Finds the optimal peer to distribute the shared state to the specified requester.
         std::optional<ccoip_socket_address_t> findBestSharedStateTxPeer(const ccoip_uuid_t &peer_uuid);
-
-        void checkSyncSharedStateConsensus(uint32_t peer_group);
-
-        void checkSyncSharedStateCompleteConsensus(uint32_t peer_group);
-
-        void checkCollectiveCommsInitiateConsensus(uint32_t peer_group, uint64_t tag);
-
-        void checkCollectiveCommsCompleteConsensus(uint32_t peer_group, uint64_t tag);
 
         // packet handling functions
         void handleAcceptNewPeers(const ccoip_socket_address_t &client_address,
@@ -75,6 +75,8 @@ namespace ccoip {
 
         void handleCollectiveCommsInitiate(const ccoip_socket_address_t &client_address,
                                            const C2MPacketCollectiveCommsInitiate &packet);
+
+        void sendCollectiveCommsAbortPackets(uint32_t peer_group, uint64_t tag, bool aborted);
 
         void handleCollectiveCommsComplete(const ccoip_socket_address_t &client_address,
                                            const C2MPacketCollectiveCommsComplete &packet);

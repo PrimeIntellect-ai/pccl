@@ -2,7 +2,8 @@
 #include <gtest/gtest.h>
 #include <future>
 
-inline ccoip_socket_address_t create_ipv4_address(const uint8_t a, const uint8_t b, const uint8_t c, const uint8_t d, const uint16_t port) {
+inline ccoip_socket_address_t create_ipv4_address(const uint8_t a, const uint8_t b, const uint8_t c, const uint8_t d,
+                                                  const uint16_t port) {
     return ccoip_socket_address_t{
         .inet = {
             .protocol = inetIPv4,

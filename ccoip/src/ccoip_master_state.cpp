@@ -241,8 +241,7 @@ bool ccoip::CCoIPMasterState::voteCollectiveCommsInitiate(const ccoip_uuid_t &pe
     return true;
 }
 
-bool ccoip::CCoIPMasterState::voteCollectiveCommsComplete(const ccoip_uuid_t &peer_uuid, const uint64_t tag,
-                                                          const bool was_aborted) {
+bool ccoip::CCoIPMasterState::voteCollectiveCommsComplete(const ccoip_uuid_t &peer_uuid, const uint64_t tag) {
     const auto info_opt = getClientInfo(peer_uuid);
     if (!info_opt) {
         LOG(WARN) << "Cannot vote to complete collective communications operation for unregistered client " <<
@@ -278,11 +277,6 @@ bool ccoip::CCoIPMasterState::voteCollectiveCommsComplete(const ccoip_uuid_t &pe
 
     // set the client state to vote to complete a collective communications operation
     ccomms_state = VOTE_COMPLETE_COLLECTIVE_COMMS;
-
-    // set the client state to indicate if the collective communications operation was aborted
-    if (was_aborted) {
-        info.collective_coms_failure_states[tag] = true;
-    }
     return true;
 }
 
@@ -472,18 +466,6 @@ bool ccoip::CCoIPMasterState::transitionToPerformCollectiveCommsPhase(const uint
 }
 
 bool ccoip::CCoIPMasterState::transitionToCollectiveCommsCompletePhase(const uint32_t peer_group, const uint64_t tag) {
-    // check if the collective communications operation was aborted by any client
-    bool op_aborted = false;
-    /*for (auto &[_, info]: client_info) {
-        if (info.peer_group != peer_group) {
-            continue;
-        }
-        if (info.collective_coms_failure_states[tag]) {
-            op_aborted = true;
-            break;
-        }
-    }*/
-
     for (auto &[_, info]: client_info) {
         if (info.connection_phase != PEER_ACCEPTED) {
             continue;
@@ -503,22 +485,11 @@ bool ccoip::CCoIPMasterState::transitionToCollectiveCommsCompletePhase(const uin
             return false;
         }
 
-        // if the collective comms operation not aborted, the current state may also be PERFORM_COLLECTIVE_COMMS
-        if (!op_aborted) {
-            if (ccomms_state_it->second != VOTE_COMPLETE_COLLECTIVE_COMMS) {
-                LOG(WARN) << "Client " << ccoip_sockaddr_to_str(info.socket_address) <<
-                        " in state " << ccomms_state_it->second <<
-                        " but expected VOTE_COMPLETE_COLLECTIVE_COMMS";
-                return false;
-            }
-        } else {
-            if (ccomms_state_it->second != VOTE_COMPLETE_COLLECTIVE_COMMS && ccomms_state_it->second !=
-                PERFORM_COLLECTIVE_COMMS) {
-                LOG(WARN) << "Client " << ccoip_sockaddr_to_str(info.socket_address) <<
-                        " in state " << ccomms_state_it->second <<
-                        " but expected VOTE_COMPLETE_COLLECTIVE_COMMS or PERFORM_COLLECTIVE_COMMS (because the collective communications operation was aborted)";
-                return false;
-            }
+        if (ccomms_state_it->second != VOTE_COMPLETE_COLLECTIVE_COMMS) {
+            LOG(WARN) << "Client " << ccoip_sockaddr_to_str(info.socket_address) <<
+                    " in state " << ccomms_state_it->second <<
+                    " but expected VOTE_COMPLETE_COLLECTIVE_COMMS";
+            return false;
         }
 
         LOG(DEBUG) << "Collective communications operation for tag " << tag << " complete for client " <<
@@ -529,7 +500,32 @@ bool ccoip::CCoIPMasterState::transitionToCollectiveCommsCompletePhase(const uin
             info.connection_state = IDLE;
         }
     }
+    collective_comms_op_abort_states[peer_group].clear();
     return true;
+}
+
+bool ccoip::CCoIPMasterState::abortCollectiveCommsOperation(const uint32_t peer_group, const uint64_t tag) {
+    auto &peer_group_map = collective_comms_op_abort_states[peer_group];
+    if (const auto it = peer_group_map.find(tag); it != peer_group_map.end()) {
+        if (it->second) {
+            return false;
+        }
+    }
+    peer_group_map[tag] = true;
+    return true;
+}
+
+bool ccoip::CCoIPMasterState::isCollectiveCommsOperationAborted(const uint32_t peer_group, const uint64_t tag) const {
+    const auto pg_it = collective_comms_op_abort_states.find(peer_group);
+    if (pg_it == collective_comms_op_abort_states.end()) {
+        return false;
+    }
+    const auto &peer_group_map = pg_it->second;
+    const auto tag_it = peer_group_map.find(tag);
+    if (tag_it == peer_group_map.end()) {
+        return false;
+    }
+    return tag_it->second;
 }
 
 bool ccoip::CCoIPMasterState::syncSharedStateConsensus(const uint32_t peer_group) {

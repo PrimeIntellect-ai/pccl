@@ -10,7 +10,7 @@
 namespace ccoip {
     class CCoIPClientHandler {
         /// Blocking socket for connection to master node
-        tinysockets::BlockingIOSocket master_socket;
+        tinysockets::QueuedSocket master_socket;
 
         /// All state of the client is encapsulated in this object
         CCoIPClientState client_state;

@@ -42,6 +42,7 @@ namespace ccoip {
 #define M2C_PACKET_SYNC_SHARED_STATE_COMPLETE_ID 6
 #define M2C_PACKET_COLLECTIVE_COMMS_COMMENCE_ID 7
 #define M2C_PACKET_COLLECTIVE_COMMS_COMPLETE_ID 8
+#define M2C_PACKET_COLLECTIVE_COMMS_ABORT_ID 9
 
     // P2P packets:
 #define P2P_PACKET_HELLO_ID 1
@@ -233,6 +234,7 @@ namespace ccoip {
         static packetId_t packet_id;
 
         uint64_t tag;
+        bool require_topology_update;
 
         void serialize(PacketWriteBuffer &buffer) const override;
 
@@ -245,7 +247,19 @@ namespace ccoip {
         static packetId_t packet_id;
 
         uint64_t tag;
-        bool was_aborted;
+
+        void serialize(PacketWriteBuffer &buffer) const override;
+
+        [[nodiscard]] bool deserialize(PacketReadBuffer &buffer) override;
+    };
+
+    // M2CPacketCollectiveCommsAbort
+    class M2CPacketCollectiveCommsAbort final : public Packet {
+    public:
+        static packetId_t packet_id;
+
+        uint64_t tag;
+        bool aborted;
 
         void serialize(PacketWriteBuffer &buffer) const override;
 

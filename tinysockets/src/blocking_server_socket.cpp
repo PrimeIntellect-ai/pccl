@@ -158,8 +158,7 @@ bool tinysockets::BlockingIOServerSocket::interrupt() {
     }
     running.store(false);
 
-    // this should interrupt the accept() call
-    shutdown(socket_fd, SHUT_RDWR);
+    shutdown(socket_fd, SHUT_RDWR); // without shutdown, accept() may not get unblocked
     closesocket(socket_fd);
 
     socket_fd = 0;

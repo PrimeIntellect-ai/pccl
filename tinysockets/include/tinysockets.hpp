@@ -166,17 +166,6 @@ namespace tinysockets {
         std::mutex send_mutex;
         std::mutex recv_mutex;
 
-        std::mutex unmatched_packets_mutex;
-
-        struct UnmatchedPacket final {
-            ccoip::packetId_t packet_id;
-            std::unique_ptr<uint8_t[]> data;
-            size_t byte_size;
-        };
-
-        std::vector<UnmatchedPacket> unmatched_packets{};
-        std::condition_variable cv_packets_published{};
-
     public:
         explicit BlockingIOSocket(const ccoip_socket_address_t &address);
 
@@ -208,155 +197,24 @@ namespace tinysockets {
         }
 
         /// Receives a packet of the specified type
-        /// @param no_wait if true, the function will return immediately if no packet is available
         template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
         [[nodiscard]] std::optional<T> receivePacket(const bool no_wait = false) {
             std::lock_guard guard{recv_mutex};
             const ccoip::packetId_t id = T::packet_id;
-            return receiveLtvPacket<T>(id);
-        }
-
-        /// Returns the next received packet that matches the given predicate.
-        /// This function is thread-safe.
-        /// If two threads are waiting for packets, one thread will read while the other thread waits.
-        /// After receiving the packet, the thread that has received the packet will check the predicate.
-        /// If this predicate matches, the packet is returned. Otherwise, a new packet is read.
-        /// In case a packet is received that does not match the predicate and a different thread's predicate matches,
-        /// the other thread will obtain and return this packet.
-        template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
-        [[nodiscard]] std::optional<T> receiveMatchingPacket(const std::function<bool(const T &)> &predicate) {
-            const ccoip::packetId_t expected_packet_id = T::packet_id;
-
-            bool may_read = false;
-            while (true) {
-                std::unique_lock u_guard{unmatched_packets_mutex};
-
-                // first check if there are any unmatched packets
-                if (unmatched_packets.empty()) {
-                    // if no, try to acquire the read mutex and become the reading thread
-                    may_read = recv_mutex.try_lock();
-                    if (may_read) {
-                        break;
-                    }
-                    // if that fails, wait until the reading thread notifies us of a published packet
-                    cv_packets_published.wait(u_guard);
-                }
-
-                // protect against spurious wake-ups and check if there are any unmatched packets
-                if (!unmatched_packets.empty()) {
-                    // if there are, check if any of them match the predicate
-                    for (auto it = unmatched_packets.begin(); it != unmatched_packets.end();) {
-                        if (it->packet_id == expected_packet_id) {
-                            // if the packet is of the type we expect, attempt to parse it
-                            PacketReadBuffer buffer{it->data.get(), it->byte_size};
-                            if (const auto packet_id = buffer.read<ccoip::packetId_t>();
-                                packet_id != expected_packet_id) [[unlikely]] {
-                                LOG(ERR) <<
-                                        "Packet ID logged in unmatched packet header does not match packet id encoded in attached packet buffer";
-                                return std::nullopt;
-                            }
-                            T packet{};
-                            if (!packet.deserialize(buffer)) {
-                                LOG(ERR) << "Failed to deserialize packet with ID " << expected_packet_id;
-                                return std::nullopt;
-                            }
-                            if (predicate(packet)) {
-                                // if the packet matches, remove it from the unmatched packets list and return it
-                                unmatched_packets.erase(it);
-                                return std::move(packet);
-                            }
-                        }
-                        // if the packet does not match, keep it in the unmatched packets list
-                        ++it;
-                    }
-                }
-            }
-
-            // this thread has permission to exclusively read from the socket
-            {
-                std::unique_lock guard{recv_mutex, std::adopt_lock}; // mutex already acquired, only guard safe release
-                while (true) {
-                    // read the next packet
-                    size_t packet_buffer_size{};
-                    std::unique_ptr<uint8_t[]> packet_buffer{};
-
-                    [this, &packet_buffer, &packet_buffer_size, expected_packet_id] {
-                        const std::optional<size_t> length_opt = receivePacketLength();
-                        if (!length_opt) {
-                            LOG(ERR) << "Failed to receive packet length for packet ID " << expected_packet_id;
-                            packet_buffer = nullptr;
-                            return;
-                        }
-                        const size_t length = *length_opt;
-                        std::unique_ptr<uint8_t[]> data_ptr{new uint8_t[length]};
-                        std::span data{data_ptr.get(), length};
-                        if (!receivePacketData(data)) {
-                            LOG(ERR) << "Failed to receive packet data for packet ID " << expected_packet_id <<
-                                    " with length "
-                                    << data.
-                                    size();
-                            packet_buffer = nullptr;
-                            return;
-                        }
-                        packet_buffer_size = data.size_bytes();
-                        packet_buffer = std::move(data_ptr);
-                    }();
-
-                    if (!packet_buffer) {
-                        // wake up all the waiting threads because we are relinquishing the read thread title
-                        // even though we failed to read the packet
-                        {
-                            std::unique_lock u_guard{unmatched_packets_mutex};
-                            cv_packets_published.notify_all();
-                        }
-                        return std::nullopt;
-                    }
-
-                    // attempt to parse the packet
-                    ccoip::packetId_t actual_packet_id; {
-                        PacketReadBuffer buffer{packet_buffer.get(), packet_buffer_size};
-                        actual_packet_id = buffer.read<ccoip::packetId_t>();
-
-                        // check if the read packet is of the type we expect. if it is not,
-                        // we still must not drop the packet, but instead publish it to other threads
-                        if (actual_packet_id == expected_packet_id) {
-                            T packet{};
-                            if (!packet.deserialize(buffer)) {
-                                LOG(ERR) << "Failed to deserialize packet with ID " << expected_packet_id;
-                                return std::nullopt;
-                            }
-                            if (predicate(packet)) {
-                                // wake up all the waiting threads
-                                {
-                                    std::unique_lock u_guard{unmatched_packets_mutex};
-                                    cv_packets_published.notify_all();
-                                }
-                                return std::move(packet);
-                            }
-                        }
-                    }
-
-                    // publish unmatched packet to other threads
-                    {
-                        std::unique_lock u_guard{unmatched_packets_mutex};
-                        unmatched_packets.push_back({actual_packet_id, std::move(packet_buffer), packet_buffer_size});
-                        cv_packets_published.notify_all();
-                    }
-                }
-            }
+            return receiveLtvPacket<T>(id, no_wait);
         }
 
     private:
         // Packet decoding / encoding functions
         [[nodiscard]] bool sendLtvPacket(ccoip::packetId_t packet_id, const PacketWriteBuffer &buffer) const;
 
-        [[nodiscard]] std::optional<size_t> receivePacketLength() const;
+        [[nodiscard]] std::optional<size_t> receivePacketLength(bool no_wait) const;
 
         [[nodiscard]] bool receivePacketData(std::span<std::uint8_t> &dst) const;
 
         template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
-        [[nodiscard]] std::optional<T> receiveLtvPacket(const ccoip::packetId_t packet_id) {
-            const std::optional<size_t> length_opt = receivePacketLength();
+        [[nodiscard]] std::optional<T> receiveLtvPacket(const ccoip::packetId_t packet_id, const bool no_wait) {
+            const std::optional<size_t> length_opt = receivePacketLength(no_wait);
             if (!length_opt) {
                 return std::nullopt;
             }
@@ -369,6 +227,140 @@ namespace tinysockets {
                 return std::nullopt;
             }
             PacketReadBuffer buffer{data.data(), data.size()};
+            if (const auto actual_packet_id = buffer.read<ccoip::packetId_t>(); actual_packet_id != packet_id) {
+                LOG(ERR) << "Expected packet ID " << packet_id << " but received " << actual_packet_id;
+                return std::nullopt;
+            }
+            T packet{};
+            if (!packet.deserialize(buffer)) {
+                LOG(ERR) << "Failed to deserialize packet with ID " << packet_id;
+                return std::nullopt;
+            }
+            return packet;
+        }
+    };
+
+    struct QueuedSocketInternalState;
+
+    /// A socket with a designated thread for sending packets and a receive-queue.
+    /// Sending is threadsafe and can be performed from multiple threads, however sending results in locking.
+    /// Receives occur on the designated thread and enqueued for the user to retrieve. Functions like @code receivePacket @endcode
+    /// poll this queue.
+    class QueuedSocket final {
+        int socket_fd;
+        ccoip_socket_address_t connect_sockaddr;
+        std::mutex send_mutex;
+        std::thread receive_thread;
+        QueuedSocketInternalState *internal_state;
+        volatile bool running;
+
+    public:
+        explicit QueuedSocket(const ccoip_socket_address_t &address);
+
+        explicit QueuedSocket(int socket_fd);
+
+        QueuedSocket(const QueuedSocket &other) = delete;
+
+        QueuedSocket(QueuedSocket &&other) = delete;
+
+        QueuedSocket &operator=(const QueuedSocket &other) = delete;
+
+        QueuedSocket &operator=(QueuedSocket &&other) = delete;
+
+        ~QueuedSocket();
+
+        [[nodiscard]] bool establishConnection();
+
+        [[nodiscard]] bool run();
+
+        void join();
+
+        [[nodiscard]] bool interrupt();
+
+        [[nodiscard]] bool closeConnection();
+
+        [[nodiscard]] bool isOpen() const;
+
+        [[nodiscard]] const ccoip_socket_address_t &getConnectSockAddr() const;
+
+        template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
+        [[nodiscard]] bool sendPacket(const T &packet) {
+            std::lock_guard guard{send_mutex};
+            const ccoip::packetId_t id = T::packet_id;
+            PacketWriteBuffer buffer{};
+            packet.serialize(buffer);
+            return sendLtvPacket(id, buffer);
+        }
+
+        /// Receives a packet of the specified type
+        template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
+        [[nodiscard]] std::optional<T> receivePacket(const bool no_wait = false) {
+            const ccoip::packetId_t id = T::packet_id;
+            return pollNextPacket<T>(id, no_wait);
+        }
+
+        template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
+        [[nodiscard]] std::optional<T> receiveMatchingPacket(const std::function<bool(const T &)> &predicate,
+                                                             const bool no_wait = false) {
+            const ccoip::packetId_t id = T::packet_id;
+            return pollNextMatchingPacket<T>(id, predicate, no_wait);
+        }
+
+    private:
+        // Packet decoding / encoding functions
+        [[nodiscard]] bool sendLtvPacket(ccoip::packetId_t packet_id, const PacketWriteBuffer &buffer) const;
+
+        [[nodiscard]] std::optional<size_t> receivePacketLength() const;
+
+        [[nodiscard]] bool receivePacketData(std::span<std::uint8_t> &dst) const;
+
+        [[nodiscard]] std::optional<std::pair<std::unique_ptr<uint8_t[]>, std::span<uint8_t> > > pollNextPacketBuffer(
+            ccoip::packetId_t packet_id,
+            bool no_wait) const;
+
+        [[nodiscard]] std::optional<std::pair<std::unique_ptr<uint8_t[]>, std::span<uint8_t> > >
+        pollNextMatchingPacketBuffer(
+            ccoip::packetId_t packet_id, const std::function<bool(const std::span<uint8_t> &)> &predicate,
+            bool no_wait) const;
+
+        template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
+        [[nodiscard]] std::optional<T> pollNextPacket(const ccoip::packetId_t packet_id, const bool no_wait) {
+            const auto pair = pollNextPacketBuffer(packet_id, no_wait);
+            if (!pair) {
+                return std::nullopt;
+            }
+            const auto &[data_ptr, data] = *pair;
+            return parsePacket<T>(packet_id, data);
+        }
+
+        template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
+        [[nodiscard]] std::optional<T> pollNextMatchingPacket(const ccoip::packetId_t packet_id,
+                                                              const std::function<bool(const T &)> &predicate,
+                                                              const bool no_wait) {
+            const auto pair = pollNextMatchingPacketBuffer(
+                packet_id, [packet_id, predicate](const std::span<uint8_t> &data) {
+                    PacketReadBuffer buffer{data.data(), data.size()};
+                    if (packet_id != buffer.read<ccoip::packetId_t>()) {
+                        return false; // no need to further deserialize, packet ID does not match
+                    }
+                    T packet{};
+                    if (!packet.deserialize(buffer)) {
+                        LOG(ERR) << "Failed to deserialize packet with ID " << packet_id;
+                        return false;
+                    }
+                    return predicate(packet);
+                }, no_wait);
+            if (!pair) {
+                return std::nullopt;
+            }
+            const auto &[data_ptr, data] = *pair;
+            return parsePacket<T>(packet_id, data);
+        }
+
+        template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
+        [[nodiscard]] std::optional<T> parsePacket(const ccoip::packetId_t packet_id,
+                                                   const std::span<std::uint8_t> &packet_data) {
+            PacketReadBuffer buffer{packet_data.data(), packet_data.size()};
             if (const auto actual_packet_id = buffer.read<ccoip::packetId_t>(); actual_packet_id != packet_id) {
                 LOG(ERR) << "Expected packet ID " << packet_id << " but received " << actual_packet_id;
                 return std::nullopt;

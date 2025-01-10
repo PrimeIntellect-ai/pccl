@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runs-on }}
     env:
       IS_CI: 1
       LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/workflows/lsan.supp
@@ -18,20 +18,20 @@ jobs:
       fail-fast: false
 
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
-        build_type: [ RelWithDebInfo ]
         include:
-          # Linux configurations
-          - os: ubuntu-latest
+          # Linux configurations using self-hosted runners
+          - runs-on: [ self-hosted, Linux ]
+            os: ubuntu-latest
             c_compiler: gcc
             cpp_compiler: g++
-          - os: ubuntu-latest
-            c_compiler: clang
-            cpp_compiler: clang++
-          # Windows configurations
-          - os: windows-latest
+            build_type: Release
+
+          # Windows configurations using GitHub-hosted runners
+          - runs-on: windows-latest
+            os: windows-latest
             c_compiler: cl
             cpp_compiler: cl
+            build_type: Release
 
     steps:
       - uses: actions/checkout@v4
@@ -62,16 +62,22 @@ jobs:
       - name: Compile Python wheel
         run: cd ${{ github.workspace }}/python/framework && pip3 wheel --verbose -w dist .
 
+      - name: Create Python virtual environment
+        run: python3 -m venv ${{ github.workspace }}/venv
+
+      - name: Activate virtual environment
+        run: echo 'PATH=${{ github.workspace }}/venv/bin:$PATH' >> $GITHUB_ENV
+
       - name: Install Python wheel Win32
         if: runner.os == 'Windows'
-        run: pip3 install ${{ github.workspace }}/python/framework/dist/pccl-0.1.0-cp39-cp39-win_amd64.whl
+        run: pip install ${{ github.workspace }}/python/framework/dist/pccl-0.1.0-cp39-cp39-win_amd64.whl
 
       - name: Install Python wheel Unix
         if: runner.os == 'Linux'
-        run: pip3 install ${{ github.workspace }}/python/framework/dist/*.whl
+        run: pip install ${{ github.workspace }}/python/framework/dist/*.whl
 
       - name: Install Test dependencies
-        run: pip3 install pytest torchvision
+        run: pip install pytest torchvision
 
       - name: Python Unit Tests
         run: python -m pytest -s ${{ github.workspace }}/python/tests/unit_tests

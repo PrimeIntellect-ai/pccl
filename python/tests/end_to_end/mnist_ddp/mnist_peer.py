@@ -37,11 +37,12 @@ device = torch.device("cpu")
 # Define hyperparameters
 input_size = 28 * 28  # MNIST images are 28x28
 # hidden_sizes = [1024, 4096, 4096, 4096, 4096, 1024]
-hidden_sizes = [128]
+hidden_sizes = [256]
 num_classes = 10  # Digits 0-9
-batch_size = 64
+batch_size = 128
 learning_rate = 0.001
-max_steps = os.getenv('IS_CI', '0') == '1' and 2048 or 5000
+IS_CI = os.getenv('IS_CI', '0') == '1'
+max_steps = IS_CI and 512 or 2048
 
 # MNIST dataset (images and labels)
 train_dataset = datasets.MNIST(root='./data', train=True, transform=transforms.ToTensor(), download=True)
@@ -73,7 +74,7 @@ class NeuralNet(nn.Module):
         return x
 
 
-LOG_DEBUG = True
+LOG_DEBUG = False if IS_CI else True
 
 
 def log_debug(msg: str):
@@ -99,18 +100,7 @@ def main():
 
     # communicator
     communicator: Communicator = Communicator(HOST, 0)
-    n_attempts = 5
-    for attempt in range(n_attempts):
-        try:
-            communicator.connect()
-            break
-        except PCCLError as e:
-            print(
-                f"(RANK={RANK}) Failed to connect to the master node: {e}; (Attempt {attempt + 1}/{n_attempts})")
-
-            sleep(1)
-    else:
-        assert False, f"(RANK={RANK}) Failed to connect to the master node"
+    communicator.connect(n_attempts = 15)
     log_info(f"(RANK={RANK}) Connected to the master node; PID={os.getpid()}")
 
     # perform a dummy forward pass to initialize the optimizer state
@@ -195,7 +185,8 @@ def main():
                     log_debug(f"(RANK={RANK}, it={i}) all_reduce_async() failed: {status}; retrying...")
                     continue
                 assert info is not None
-                log_debug(f"(RANK={RANK}, it={i}) Reduce completed RX: {info.rx_bytes}, TX: {info.tx_bytes}; world_size: {info.world_size}")
+                log_debug(
+                    f"(RANK={RANK}, it={i}) Reduce completed RX: {info.rx_bytes}, TX: {info.tx_bytes}; world_size: {info.world_size}")
                 break
 
             # print hash of the gradients tensor content

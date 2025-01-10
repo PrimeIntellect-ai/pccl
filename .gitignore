@@ -9,3 +9,7 @@ python/framework/pccl.egg-info/
 *.pyc
 mnist_model.pth
 
+venv/
+__pycache__/
+python/tests/data/
+

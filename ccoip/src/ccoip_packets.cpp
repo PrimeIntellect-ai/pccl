@@ -243,10 +243,12 @@ ccoip::packetId_t ccoip::M2CPacketCollectiveCommsCommence::packet_id = M2C_PACKE
 
 void ccoip::M2CPacketCollectiveCommsCommence::serialize(PacketWriteBuffer &buffer) const {
     buffer.write<uint64_t>(tag);
+    buffer.write<boolean>(require_topology_update);
 }
 
 bool ccoip::M2CPacketCollectiveCommsCommence::deserialize(PacketReadBuffer &buffer) {
     tag = buffer.read<uint64_t>();
+    require_topology_update = buffer.read<boolean>();
     return true;
 }
 
@@ -255,12 +257,24 @@ ccoip::packetId_t ccoip::M2CPacketCollectiveCommsComplete::packet_id = M2C_PACKE
 
 void ccoip::M2CPacketCollectiveCommsComplete::serialize(PacketWriteBuffer &buffer) const {
     buffer.write<uint64_t>(tag);
-    buffer.write<boolean>(was_aborted);
 }
 
 bool ccoip::M2CPacketCollectiveCommsComplete::deserialize(PacketReadBuffer &buffer) {
     tag = buffer.read<uint64_t>();
-    was_aborted = buffer.read<boolean>();
+    return true;
+}
+
+// M2CPacketCollectiveCommsAbort
+ccoip::packetId_t ccoip::M2CPacketCollectiveCommsAbort::packet_id = M2C_PACKET_COLLECTIVE_COMMS_ABORT_ID;
+
+void ccoip::M2CPacketCollectiveCommsAbort::serialize(PacketWriteBuffer &buffer) const {
+    buffer.write<uint64_t>(tag);
+    buffer.write<boolean>(aborted);
+}
+
+bool ccoip::M2CPacketCollectiveCommsAbort::deserialize(PacketReadBuffer &buffer) {
+    tag = buffer.read<uint64_t>();
+    aborted = buffer.read<boolean>();
     return true;
 }
 

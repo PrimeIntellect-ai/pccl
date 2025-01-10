@@ -52,19 +52,18 @@ static LogLevel readReportingLevel() {
 
 LogLevel Logger::reportingLevel = readReportingLevel();
 
-NullStream::NullStream():
-    std::ostream(&m_sb) {
+NullStream::NullStream(): std::ostream(&m_sb) {
 }
 
-Logger::Logger() :
-    messageLevel(INFO) {
+Logger::Logger() : messageLevel(INFO) {
 }
 
 Logger::~Logger() {
     if (messageLevel >= reportingLevel) {
         os << std::endl;
         std::cout << os.str();
-        if (messageLevel == FATAL) {
+        if (messageLevel == FATAL || messageLevel == BUG) {
+            LOG(INFO) << "Logged fatal/bug message; exiting...";
             exit(1);
         }
     }

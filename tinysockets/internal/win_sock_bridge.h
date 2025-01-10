@@ -10,6 +10,8 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <sys/fcntl.h>
 #endif
 
 #ifdef WIN32

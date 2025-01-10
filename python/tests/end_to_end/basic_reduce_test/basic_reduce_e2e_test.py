@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import time
 from typing import List, Optional, Dict, Union, IO
 
 
@@ -50,7 +51,3 @@ def test_basic_reduce():
     # kill master process
     master_process.kill()
     master_process.wait()
-
-
-if __name__ == "__main__":
-    test_basic_reduce()

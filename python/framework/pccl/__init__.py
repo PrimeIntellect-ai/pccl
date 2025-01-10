@@ -1,11 +1,11 @@
-import torch
-
-from typing import Union
-
+from typing import Union, Optional, Tuple
+import time
 from ipaddress import ip_address, IPv4Address, IPv6Address
 from enum import Enum
 from torch import Tensor
+import torch
 from pccl._loader import load_native_module
+import logging
 
 # To debug Python to C FFI calls:
 # $ cp examples/any.py tmp.py && gdb -ex r --args python3 tmp.py
@@ -188,7 +188,7 @@ class AsyncReduceHandle:
         self._handle = handle
         self._info: Optional[Tuple[bool, int, ReduceInfo]] = None
 
-    def wait(self) -> (bool, int, ReduceInfo):
+    def wait(self) -> Tuple[bool, int, ReduceInfo]:
         """Awaits the completion of an async reduce operation. Blocks until the operation is complete."""
 
         if self._info is not None:  # guard native await function because it will fail on the second invocation
@@ -260,12 +260,22 @@ class Communicator:
         assert filename and filename.endswith('.dot')
         PCCLError.check(C.pcclSaveReducePlan(self._comm[0], bytes(filename, 'utf-8')))
 
-    def connect(self):
+    def connect(self, n_attempts: int = 5):
         """
         Establishes a connection to a master node.
+        Performs the specified number of attempts with a one second sleep interval.
         This function must be called on a communicator for the communicator to be usable.
         """
-        PCCLError.check(C.pcclConnect(self._comm[0]))
+        for attempt in range(1, n_attempts + 1):
+            try:
+                PCCLError.check(C.pcclConnect(self._comm[0]))
+                logging.info(f"Connected to the master node")
+                break
+            except PCCLError as e:
+                logging.error(f"Failed to connect to the master node (Attempt {attempt}/{n_attempts}): {e}")
+                time.sleep(1)
+        else:
+            raise Exception("Failed to connect to the master node")
 
     def all_reduce(self, send: Tensor, recv: Tensor, *, op: ReduceOp, tag: int = 0) -> ReduceInfo:
         """Performs an all reduce operation on a communicator. Blocks until the all reduce is complete."""

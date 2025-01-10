@@ -1,4 +1,4 @@
-add_library(tinysockets STATIC src/server_socket.cpp src/client_socket.cpp src/blocking_server_socket.cpp src/ccoip_utils.cpp)
+add_library(tinysockets STATIC src/server_socket.cpp src/blocking_client_socket.cpp src/queued_client_socket.cpp src/blocking_server_socket.cpp src/ccoip_utils.cpp)
 
 target_include_directories(tinysockets PUBLIC include)
 target_include_directories(tinysockets PRIVATE internal)

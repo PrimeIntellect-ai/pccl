@@ -154,6 +154,11 @@ setup(
     cmdclass={
         'build_ext': CMakeBuildExecutor,
     },
+    entry_points={
+        'console_scripts': [
+            'pccl_master=pccl.master:main',
+        ],
+    },
     zip_safe=False,
     install_requires=install_requires
 )
