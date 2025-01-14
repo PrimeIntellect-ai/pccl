@@ -154,7 +154,7 @@ source venv/bin/activate
 Then build and install the package from source:
 
 ```
-pip install framework/ # make sure not to forget the trailing slash
+pip install python/framework/ # make sure not to forget the trailing slash
 ```
 
 To test the installation, run the following command valid for both Windows with PowerShell and Unix-like systems:
