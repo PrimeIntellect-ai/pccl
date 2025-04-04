@@ -7,6 +7,9 @@
 #include <quantize_kernels.hpp>
 #include <network_order_utils.hpp>
 
+#include <piquant_utils.hpp>
+#include <thread>
+
 #ifndef _MSC_VER
 #define FORCE_INLINE inline __attribute__((always_inline))
 #else
@@ -353,29 +356,37 @@ void performReduction(const std::span<std::byte> &dst,
                       const ccoip::ccoip_quantization_algorithm_t quantization_algorithm,
                       const ccoip::ccoip_reduce_op_t op,
                       const ccoip::internal::quantize::DeQuantizationMetaData &meta_data) {
+    if (quantization_algorithm == ccoip::ccoipQuantizationZeroPointScale)
+        throw std::logic_error{"Quantization algorithm not supported"};
+    if (src_type == ccoip::ccoipFloat)
+        throw std::logic_error{"Quantization algorithm not supported"};
+    std::size_t bs = dtype_info_of(ccoip::internal::get_piquant_dtype(src_type)).bit_size;
+
+
+    piquant::reduce_op reduce_op {};
+
     switch (op) {
         case ccoip::ccoipOpSet:
-            doReduceDataType<Set>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
-            break;
-        // both sum & avg have the same reduction operation (that being sum),
-        // however avg has a finalization step that is applied when all stages are complete.
+            reduce_op = piquant::reduce_op::set;
+        break;
         case ccoip::ccoipOpSum:
         case ccoip::ccoipOpAvg:
-            doReduceDataType<Sum>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
-            break;
-        case ccoip::ccoipOpProd:
-            doReduceDataType<Prod>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
-            break;
-        case ccoip::ccoipOpMax:
-            doReduceDataType<Max>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
-            break;
-        case ccoip::ccoipOpMin:
-            doReduceDataType<Min>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
-            break;
+            reduce_op = piquant::reduce_op::add;
+        break;
         default:
             LOG(BUG) << "Unsupported reduce operation: " << op;
             break;
     }
+
+    ccoip::internal::get_quant_ctx().dequantize(
+        src,
+        ccoip::internal::get_piquant_dtype(src_type),
+        dst,
+        ccoip::internal::get_piquant_dtype(dst_type),
+        meta_data.scaleAs<float>(),
+         meta_data.zeroPointAs<std::int32_t>(),
+        reduce_op
+    );
 }
 
 void ccoip::internal::reduce::performReduction(const std::span<std::byte> &dst,

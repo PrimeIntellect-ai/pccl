@@ -29,7 +29,7 @@ endif()
 
 target_link_libraries(ccoip_internal PRIVATE crc32_cpu)
 target_link_libraries(ccoip_internal PRIVATE simplehash_cpu)
-# target_link_libraries(ccoip_internal PRIVATE piquant)
+target_link_libraries(ccoip_internal PRIVATE piquant)
 
 target_link_libraries(ccoip_internal PUBLIC tinysockets)
 target_link_libraries(ccoip_internal PRIVATE pccl_log)
