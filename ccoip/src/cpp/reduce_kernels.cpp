@@ -356,11 +356,6 @@ void performReduction(const std::span<std::byte> &dst,
                       const ccoip::ccoip_quantization_algorithm_t quantization_algorithm,
                       const ccoip::ccoip_reduce_op_t op,
                       const ccoip::internal::quantize::DeQuantizationMetaData &meta_data) {
-    if (quantization_algorithm == ccoip::ccoipQuantizationZeroPointScale)
-        throw std::logic_error{"Quantization algorithm not supported"};
-    if (src_type != ccoip::ccoipFloat)
-        throw std::logic_error{"Quantization algorithm not supported"};
-
     if (src_type == dst_type) {
         switch (op) {
             case ccoip::ccoipOpSet:

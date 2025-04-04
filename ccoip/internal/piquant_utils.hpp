@@ -6,7 +6,7 @@
 
 namespace ccoip::internal {
     inline piquant::context& get_quant_ctx() {
-        static piquant::context s_ctx {std::max(1u, std::thread::hardware_concurrency())};
+        static piquant::context s_ctx {std::max(1u, std::thread::hardware_concurrency())}; //TODO threadsafe
         return s_ctx;
     }
 

@@ -115,11 +115,11 @@ namespace ccoip::internal::quantize {
         [[nodiscard]] T scaleAs() const {
             switch (scale_type) {
                 case ccoipFloat: {
-                    assert(scale.size() == sizeof(T));
+                    assert(scale.size() == sizeof(float));
                     return static_cast<T>(*reinterpret_cast<const float *>(scale.data()));
                 }
                 case ccoipDouble: {
-                    assert(scale.size() == sizeof(T));
+                    assert(scale.size() == sizeof(double));
                     return static_cast<T>(*reinterpret_cast<const double *>(scale.data()));
                 }
                 default: LOG(BUG) << "Unsupported scale type: " << scale_type; std::abort();
@@ -130,35 +130,35 @@ namespace ccoip::internal::quantize {
         [[nodiscard]] T zeroPointAs() const {
             switch (zero_point_type) {
                 case ccoipInt8: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::int8_t));
                     return static_cast<T>(*reinterpret_cast<const std::int8_t *>(zero_point.data()));
                 }
                 case ccoipUint8: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::uint8_t));
                     return static_cast<T>(*reinterpret_cast<const std::uint8_t *>(zero_point.data()));
                 }
                 case ccoipInt16: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::int16_t));
                     return static_cast<T>(*reinterpret_cast<const std::int16_t *>(zero_point.data()));
                 }
                 case ccoipUint16: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::uint16_t));
                     return static_cast<T>(*reinterpret_cast<const std::uint16_t *>(zero_point.data()));
                 }
                 case ccoipInt32: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::int32_t));
                     return static_cast<T>(*reinterpret_cast<const std::int32_t *>(zero_point.data()));
                 }
                 case ccoipUint32: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::uint32_t));
                     return static_cast<T>(*reinterpret_cast<const std::uint32_t *>(zero_point.data()));
                 }
                 case ccoipInt64: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::int64_t));
                     return static_cast<T>(*reinterpret_cast<const std::int64_t *>(zero_point.data()));
                 }
                 case ccoipUint64: {
-                    assert(zero_point.size() == sizeof(T));
+                    assert(zero_point.size() == sizeof(std::uint64_t));
                     return static_cast<T>(*reinterpret_cast<const std::uint64_t *>(zero_point.data()));
                 }
                 default: LOG(BUG) << "Unsupported zero point type: " << zero_point_type;std::abort();
