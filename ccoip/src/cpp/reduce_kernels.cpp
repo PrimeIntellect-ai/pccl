@@ -358,13 +358,35 @@ void performReduction(const std::span<std::byte> &dst,
                       const ccoip::internal::quantize::DeQuantizationMetaData &meta_data) {
     if (quantization_algorithm == ccoip::ccoipQuantizationZeroPointScale)
         throw std::logic_error{"Quantization algorithm not supported"};
-    if (src_type == ccoip::ccoipFloat)
+    if (src_type != ccoip::ccoipFloat)
         throw std::logic_error{"Quantization algorithm not supported"};
-    std::size_t bs = dtype_info_of(ccoip::internal::get_piquant_dtype(src_type)).bit_size;
 
+    if (src_type == dst_type) {
+        switch (op) {
+            case ccoip::ccoipOpSet:
+                doReduceDataType<Set>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
+            break;
+            case ccoip::ccoipOpSum:
+            case ccoip::ccoipOpAvg:
+                doReduceDataType<Sum>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
+            break;
+            case ccoip::ccoipOpProd:
+                doReduceDataType<Prod>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
+            break;
+            case ccoip::ccoipOpMax:
+                doReduceDataType<Max>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
+            break;
+            case ccoip::ccoipOpMin:
+                doReduceDataType<Min>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
+            break;
+            default:
+                LOG(BUG) << "Unsupported reduce operation: " << op;
+            break;
+        }
+        return;
+    }
 
     piquant::reduce_op reduce_op {};
-
     switch (op) {
         case ccoip::ccoipOpSet:
             reduce_op = piquant::reduce_op::set;
@@ -384,7 +406,7 @@ void performReduction(const std::span<std::byte> &dst,
         dst,
         ccoip::internal::get_piquant_dtype(dst_type),
         meta_data.scaleAs<float>(),
-         meta_data.zeroPointAs<std::int32_t>(),
+        meta_data.zeroPointAs<std::int32_t>(),
         reduce_op
     );
 }

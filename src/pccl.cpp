@@ -148,6 +148,8 @@ getCCoIPQuantizationAlgorithm(const pcclQuantizationAlgorithm_t algorithm) {
             return ccoip::ccoipQuantizationNone;
         case pcclQuantMinMax:
             return ccoip::ccoipQuantizationMinMax;
+        case pcclQuantZeroPointScale:
+            return ccoip::ccoipQuantizationZeroPointScale;
     }
     return std::nullopt;
 }

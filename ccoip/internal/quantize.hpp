@@ -97,6 +97,9 @@ namespace ccoip::internal::quantize {
                 scale = network_order_utils::host_to_network(scale);
             }
 
+            meta_data.scale_type = ccoip_data_type_from_type<S>();
+            meta_data.zero_point_type = ccoip_data_type_from_type<Z>();
+
             // floats and doubles are always in host byte order
 
             meta_data.zero_point.resize(zero_point_type_size);
@@ -119,7 +122,7 @@ namespace ccoip::internal::quantize {
                     assert(scale.size() == sizeof(T));
                     return static_cast<T>(*reinterpret_cast<const double *>(scale.data()));
                 }
-                default: LOG(BUG) << "Unsupported scale type: " << static_cast<uint8_t>(scale_type);
+                default: LOG(BUG) << "Unsupported scale type: " << scale_type; std::abort();
             }
         }
 
@@ -158,7 +161,7 @@ namespace ccoip::internal::quantize {
                     assert(zero_point.size() == sizeof(T));
                     return static_cast<T>(*reinterpret_cast<const std::uint64_t *>(zero_point.data()));
                 }
-                default: LOG(BUG) << "Unsupported zero point type: " << static_cast<uint8_t>(zero_point_type);
+                default: LOG(BUG) << "Unsupported zero point type: " << zero_point_type;std::abort();
             }
         }
 

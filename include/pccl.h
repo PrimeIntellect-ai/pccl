@@ -108,7 +108,8 @@ typedef struct pcclReduceOperandDescriptor_t {
 
 typedef enum pcclQuantizationAlgorithm_t {
     pcclQuantNone = 0,
-    pcclQuantMinMax = 1
+    pcclQuantMinMax = 1,
+    pcclQuantZeroPointScale = 2
 } pcclQuantizationAlgorithm_t;
 
 typedef struct pcclQuantizationOptions_t {

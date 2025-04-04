@@ -100,8 +100,8 @@ int main() {
                     .op = pcclSum,
                     .tag = 0,
                     .src_descriptor = {.datatype = pcclFloat, .distribution_hint = PCCL_DISTRIBUTION_HINT_NONE},
-                    // .quantization_options = {.quantized_datatype = pcclUint8, .algorithm = pcclQuantMinMax},
-                    .quantization_options = {.quantized_datatype = pcclFloat, .algorithm = pcclQuantNone},
+                    .quantization_options = {.quantized_datatype = pcclUint8, .algorithm = pcclQuantZeroPointScale},
+                    //.quantization_options = {.quantized_datatype = pcclFloat, .algorithm = pcclQuantZeroPointScale},
             };
             pcclAllReduceAsync(gradients, weights, &desc, communicator, &async_op);
             result = pcclAwaitAsyncReduce(&async_op, &reduce_info);
