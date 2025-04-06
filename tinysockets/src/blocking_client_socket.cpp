@@ -241,15 +241,23 @@ bool tinysockets::BlockingIOSocket::sendLtvPacket(const ccoip::packetId_t packet
 }
 
 void tinysockets::BlockingIOSocket::maximizeSendBuffer() const {
+#ifndef __APPLE__
     // request insanely large send and receive buffer sizes and let the kernel clamp them
     constexpr int desired_size = 128 * 1024 * 1024; // 128 MB
     setsockoptvp(socket_fd, SOL_SOCKET, SO_SNDBUF, &desired_size, sizeof(desired_size));
+#endif
+    // On macOS, this seems to sometimes cause internal allocation failures:
+    // [ENOBUFS] The system is unable to allocate an internal buffer.
+    //           The operation may succeed when buffers become avail-able. available.
+    //           able.
 }
 
 void tinysockets::BlockingIOSocket::maximizeReceiveBuffer() const {
+#ifndef __APPLE__
     // request insanely large send and receive buffer sizes and let the kernel clamp them
     constexpr int desired_size = 128 * 1024 * 1024; // 128 MB
     setsockoptvp(socket_fd, SOL_SOCKET, SO_RCVBUF, &desired_size, sizeof(desired_size));
+#endif
 }
 
 std::optional<size_t> tinysockets::BlockingIOSocket::receivePacketLength(const bool no_wait) const {
