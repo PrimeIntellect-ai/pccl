@@ -1622,8 +1622,9 @@ bool ccoip::CCoIPMasterState::setRingTopologyUnsafe(const uint32_t peer_group,
 }
 
 static bool isTopologyDirty(const std::vector<ccoip_uuid_t> &ring_topology,
-                            const std::unordered_map<ccoip_uuid_t, ccoip::ClientInfo> &client_info) {
-    if (ring_topology.size() != client_info.size()) {
+                            const std::unordered_map<ccoip_uuid_t, ccoip::ClientInfo> &client_info,
+                            const uint64_t local_world_size) {
+    if (ring_topology.size() != local_world_size) {
         return true;
     }
     for (const auto &peer_uuid: ring_topology) {
@@ -1636,7 +1637,8 @@ static bool isTopologyDirty(const std::vector<ccoip_uuid_t> &ring_topology,
 
 std::vector<ccoip_uuid_t> ccoip::CCoIPMasterState::getRingTopology(const uint32_t peer_group) {
     std::unique_lock lock{topology_mutex};
-    if (isTopologyDirty(ring_topologies[peer_group], client_info)) {
+    if (const uint64_t local_world_size = getLocalWorldSize(peer_group);
+        isTopologyDirty(ring_topologies[peer_group], client_info, local_world_size)) {
         const auto new_topology = buildBasicRingTopology(peer_group);
         if (!setRingTopologyUnsafe(peer_group, new_topology, false)) {
             LOG(BUG) << "Topology was dirty, but failed to update it!";

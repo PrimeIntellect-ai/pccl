@@ -456,6 +456,7 @@ namespace tinysockets {
 
     class MultiplexedIOSocket final {
         std::atomic<bool> running = false;
+
         volatile int socket_fd;
         ccoip_socket_address_t connect_sockaddr;
 

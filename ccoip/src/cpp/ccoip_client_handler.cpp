@@ -54,11 +54,6 @@ bool ccoip::CCoIPClientHandler::connect() {
             socket->maximizeSendBuffer();
             socket->maximizeReceiveBuffer();
 
-            // enable 5 seconds receive timeout
-            if (!socket->enableReceiveTimout(5)) [[unlikely]] {
-                LOG(WARN) << "Failed to enable receive timeout for p2p socket!";
-            }
-
             const auto hello_packet_opt = socket->receivePacket<P2PPacketHello>();
             if (!hello_packet_opt) {
                 LOG(ERR) << "Failed to receive P2PPacketHello from " << ccoip_sockaddr_to_str(client_address);
@@ -68,13 +63,6 @@ bool ccoip::CCoIPClientHandler::connect() {
                 return;
             }
             const auto &hello_packet = hello_packet_opt.value();
-            if (!socket->sendPacket<P2PPacketHelloAck>({})) {
-                LOG(ERR) << "Failed to send P2PPacketHelloAck to " << ccoip_sockaddr_to_str(client_address);
-                if (!socket->closeConnection()) {
-                    LOG(ERR) << "Failed to close connection to " << ccoip_sockaddr_to_str(client_address);
-                }
-                return;
-            }
 
             p2p_connections_rx_mutex.lock();
             const auto &rx_socket = p2p_connections_rx[hello_packet.peer_uuid] = std::make_unique<
@@ -85,6 +73,15 @@ bool ccoip::CCoIPClientHandler::connect() {
             if (!rx_socket->run()) {
                 LOG(FATAL) << "Failed to start MultiplexedIOSocket for P2P connection with "
                         << ccoip_sockaddr_to_str(client_address);
+                return;
+            }
+
+            // send hello ack packet only after our rx socket is confirmed running
+            if (!socket->sendPacket<P2PPacketHelloAck>({})) {
+                LOG(ERR) << "Failed to send P2PPacketHelloAck to " << ccoip_sockaddr_to_str(client_address);
+                if (!socket->closeConnection()) {
+                    LOG(ERR) << "Failed to close connection to " << ccoip_sockaddr_to_str(client_address);
+                }
                 return;
             }
             LOG(INFO) << "P2P connection established with " << ccoip_sockaddr_to_str(client_address);

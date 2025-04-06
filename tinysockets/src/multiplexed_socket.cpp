@@ -162,7 +162,7 @@ std::optional<size_t> tinysockets::MultiplexedIOSocket::receivePacketLength() co
         }
         n_received += i;
     } while (n_received < sizeof(length));
-    return net_u64_to_host(length);
+    return network_order_utils::host_to_network(length);
 }
 
 bool tinysockets::MultiplexedIOSocket::run() {
@@ -204,7 +204,8 @@ bool tinysockets::MultiplexedIOSocket::run() {
                 std::span data{reinterpret_cast<uint8_t *>(data_ptr.get()), length};
                 if (!receivePacketData(data)) {
                     if (running.load(std::memory_order_acquire)) {
-                        LOG(ERR) << "Failed to receive packet data for packet with length " << length;
+                        LOG(ERR) << "Failed to receive packet data for packet with length " << length << "; error: "
+                                << std::strerror(errno) << "; exiting receive loop...";
                         if (!interrupt()) [[unlikely]] {
                             LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
                         }
@@ -288,14 +289,25 @@ bool tinysockets::MultiplexedIOSocket::run() {
                     const ssize_t i =
                             sendvp(socket_fd, entry->data.get() + n_sent, entry->size_bytes - n_sent, MSG_NOSIGNAL);
                     if (i == 0) {
-                        LOG(ERR) << "Connection was closed while sending packet data for packet with tag " << entry->tag << "; exiting send loop...";
+                        LOG(ERR) << "Connection was closed while sending packet data for packet with tag " << entry->tag
+                                << "; exiting send loop...";
                         if (!interrupt()) {
                             LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
                         }
                         break;
                     }
+
                     if (i == -1) {
-                        LOG(ERR) << "Failed to send packet data for packet with tag " << entry->tag;
+                        // if we are sending too fast and are exceeding the kernel's send buffer, we need to sleep a bit.
+                        // We will re-try sending the same data in the next iteration
+                        if (errno == ENOBUFS) {
+                            LOG(DEBUG) << "Kernel send buffer is full; Tried to send too much data without opposite peer catching up. Backing off...";
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            continue;
+                        }
+                        std::string error_message = std::strerror(errno);
+                        LOG(ERR) << "Failed to send packet data for packet with tag " << entry->tag << " with error: "
+                                << error_message;
                         break;
                     }
                     n_sent += i;
@@ -308,7 +320,6 @@ bool tinysockets::MultiplexedIOSocket::run() {
     return true;
 }
 
-
 bool tinysockets::MultiplexedIOSocket::receivePacketData(std::span<std::uint8_t> &dst) const {
     if (!(flags & MODE_RX)) {
         LOG(ERR) << "MultiplexedIOSocket::receivePacketData() called on a socket without RX mode";
@@ -317,7 +328,8 @@ bool tinysockets::MultiplexedIOSocket::receivePacketData(std::span<std::uint8_t>
     size_t n_received = 0;
     do {
         const ssize_t i = recvvp(socket_fd, dst.data() + n_received, dst.size_bytes() - n_received, 0);
-        if (i == 0 || i == -1) { // this == 0 is more important than meets the eye... Linux does not like relying on -1 for EOF
+        if (i == 0 || i == -1) {
+            // this == 0 is more important than meets the eye... Linux does not like relying on -1 for EOF
             return false;
         }
         n_received += i;

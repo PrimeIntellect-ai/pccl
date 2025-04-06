@@ -24,7 +24,6 @@
     };
     // exponent polynomial generator (xnmodp):
     auto xnmodp = [](std::uint64_t n) noexcept -> std::uint32_t {
-        // This is just placeholder logic from your snippet
         std::uint64_t stack = ~static_cast<std::uint64_t>(1);
         std::uint32_t acc, low;
         for (; n > 191; n = (n >> 1) - 16)
