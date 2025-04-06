@@ -22,10 +22,9 @@ ccoip::internal::quantize::DeQuantizationMetaData ccoip::internal::quantize::per
                 LOG(BUG) << "ZeroPointScale quantization is only supported for float data type.";
                 return {};
             }
-            std::size_t bs = dtype_info_of(get_piquant_dtype(quantized_type)).bit_size;
-            auto [scale, zp] = piquant::compute_quant_config_from_data(
+            auto [scale, zp] = get_quant_ctx().compute_quant_config_from_data(
                 std::span<const float> {reinterpret_cast<const float *>(src_span.data()), src_span.size_bytes()/sizeof(float)},
-                static_cast<std::int64_t>(((1ull<<bs)-1)>>1)
+                get_piquant_dtype(quantized_type)
             );
             get_quant_ctx().quantize(
                 src_span,
