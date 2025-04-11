@@ -11,5 +11,3 @@ add_subdirectory(threadpool)
 set(QUANT_BUILD_TESTS OFF)
 set(QUANT_COMPILE_STATIC ON)
 add_subdirectory(piquant)
-
-add_subdirectory(threadpool)
