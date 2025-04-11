@@ -62,7 +62,7 @@ Below is a simplified overview:
 ### Why So Many States?
 This fine-grained approach ensures that the master and all peers remain in **unanimous agreement** on the next action.
 Since PCCL does not rely on a single global barrier (like `MPI_Barrier`) for every possible transition, each step in the run (accepting peers, establishing connections, synchronizing states, etc.) is a carefully orchestrated micro-consensus. The advantage is that a single dropped connection or tardy peer can be gracefully handled; the run can progress with those who remain.
-With this architecture, PCCL can handle a wide range of failure conditions without risking a complete job crash. Every IO-failure induced crash and or breaking of bit parity of shared state is a bug in PCCL as long as the application is following best practices.
+With this architecture, PCCL can handle a wide range of failure conditions without risking a complete job crash. Every IO-failure induced crash and or breaking of bit parity of shared state is considered a bug in PCCL as long as the application is following best practices.
 
 ### Peer Groups & Communicators
 Each communicator is tied to a **peer group** (an integer) that the master uses to partition the run. Only peers in the same group:

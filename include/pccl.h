@@ -66,7 +66,14 @@ typedef enum pcclAttribute_t {
     PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE = 1,
 
     /// Number of peers in the peer group that this peer is part of
-    PCCL_ATTRIBUTE_PEER_GROUP_WORLD_SIZE = 2
+    PCCL_ATTRIBUTE_PEER_GROUP_WORLD_SIZE = 2,
+
+    /// Number of distinct peer groups in the run
+    PCCL_ATTRIBUTE_NUM_DISTINCT_PEER_GROUPS = 3,
+
+    /// Number of peers in the largest peer group
+    PCCL_ATTRIBUTE_LARGEST_PEER_GROUP_WORLD_SIZE = 4,
+
 } pcclAttribute_t;
 
 typedef struct pcclCommCreateParams_t {

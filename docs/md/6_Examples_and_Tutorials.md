@@ -415,9 +415,9 @@ class NeuralNet(nn.Module):
         x = self.fc2(x)
         return x
 
-HOST: str = '127.0.0.1:48148'
-RANK: int = int(os.getenv('RANK', "0"))
 
+MASTER_HOST = "127.0.0.1"
+MASTER_PORT = 48148
 
 def main():
     model = NeuralNet(input_size, hidden_sizes, num_classes).to(device)
@@ -427,15 +427,15 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # communicator
-    communicator: Communicator = Communicator(HOST, 0)
+    communicator: Communicator = Communicator(f"{MASTER_HOST}:{MASTER_PORT}", 0)
     communicator.connect(n_attempts=15)
-    log_info(f"(RANK={RANK}) Connected to the master node; PID={os.getpid()}")
+    print(f"Connected to the master node; PID={os.getpid()}")
 
     # perform a dummy forward pass to initialize the optimizer state
     for p in model.parameters():
         p.grad = torch.zeros_like(p)  # set all gradients to zero
     optimizer.step()
-    print(f"(RANK={RANK}) Initialized optimizer state")
+    print(f"Initialized optimizer state")
 
     # Reference model and optimizer state from shared state struct
     shared_state_dict = {}
@@ -459,7 +459,7 @@ def main():
     entries = [TensorInfo.from_torch(tensor, name, allow_content_inequality=False) for name, tensor in
                shared_state_dict.items()]
     shared_state: SharedState = SharedState(entries)
-    print(f"(RANK={RANK}) Initialized shared state")
+    print(f"Initialized shared state")
 
     # Training loop
     train_it = enumerate(train_loader)
@@ -469,13 +469,13 @@ def main():
         while True:
             it += 1
             if it > 1:
-                print(f"(RANK={RANK}, it={it}) update_topology()")
+                print(f"(it={it}) update_topology()")
                 while True:
                     try:
                         communicator.update_topology()
                         break
                     except PCCLError as e:
-                        print(f"(RANK={RANK}, it={it}) update_topology() failed: {e}; retrying...")
+                        print(f"(it={it}) update_topology() failed: {e}; retrying...")
                         continue
 
             world_size = communicator.get_attribute(pccl.Attribute.GLOBAL_WORLD_SIZE)
@@ -486,7 +486,7 @@ def main():
                         communicator.optimize_topology()
                         break
                     except pccl.PCCLError as e:
-                        print(f"(RANK={RANK}, it={it}) OptimizeTopology failed => {e}. Retrying...")
+                        print(f"(it={it}) OptimizeTopology failed => {e}. Retrying...")
                         time.sleep(0.1)
                 world_size = communicator.get_attribute(pccl.Attribute.GLOBAL_WORLD_SIZE)
     
@@ -505,7 +505,7 @@ def main():
             sync_info = communicator.sync_shared_state(shared_state)
             num_syncs += 1
             if shared_state.revision >= max_steps:
-                print(f"(RANK={RANK}, it={it}) Training completed")
+                print(f"(it={it}) Training completed")
                 break
 
             assert sync_info is not None
@@ -515,7 +515,7 @@ def main():
             try:
                 batch_idx, (images, labels) = next(train_it)
             except StopIteration:
-                print(f"(RANK={RANK}, it={it}) End of epoch")
+                print(f"(it={it}) End of epoch")
                 train_it = enumerate(train_loader)
                 batch_idx, (images, labels) = next(train_it)
 
@@ -534,7 +534,7 @@ def main():
             grads = torch.cat([p.grad.view(-1) for p in model.parameters() if p.grad is not None])
 
             while world_size > 1:
-                print(f"(RANK={RANK}, it={it}) all_reduce_async()")
+                print(f"(it={it}) all_reduce_async()")
                 op_desc = ReduceOperandDescriptor(
                     datatype=DataType.FLOAT,
                     distribution_hint=DistributionHint.NORMAL
@@ -548,11 +548,11 @@ def main():
                 is_success, status, info = handle.wait()
                 world_size = communicator.get_attribute(pccl.Attribute.GLOBAL_WORLD_SIZE)
                 if not is_success:
-                    print(f"(RANK={RANK}, it={it}) all_reduce_async() failed: {status}; retrying...")
+                    print(f"(it={it}) all_reduce_async() failed: {status}; retrying...")
                     continue
                 assert info is not None
                 print(
-                    f"(RANK={RANK}, it={it}) Reduce completed RX: {info.rx_bytes}, TX: {info.tx_bytes}; world_size: {info.world_size}")
+                    f"(it={it}) Reduce completed RX: {info.rx_bytes}, TX: {info.tx_bytes}; world_size: {info.world_size}")
                 break
 
             # scatter gradients back to model parameters
@@ -569,7 +569,7 @@ def main():
             shared_state.revision += 1
 
             if shared_state.revision % 5 == 0:
-                print(f"(RANK={RANK}, it={it}) loss: {loss.item()}, revision: {shared_state.revision}")
+                print(f"(it={it}) loss: {loss.item()}, revision: {shared_state.revision}")
 
     except Exception as e:
         print(f"Training aborted with exception: {e}")
@@ -587,39 +587,70 @@ def main():
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-        log_info(f"Test Accuracy: {100 * correct / total:.2f}%")
+        print(f"Test Accuracy: {100 * correct / total:.2f}%")
 
     # Save the model
     torch.save(model.state_dict(), "mnist_model.pth")
-    log_info("Model saved to mnist_model.pth")
+    print("Model saved to mnist_model.pth")
 
 
 if __name__ == '__main__':
     main()
 ```
 
-### Concurrent All-Reduce Example
+### Concurrent All-Reduce with Retry
 
 To safely recover from failures when using multiple concurrent collective operations, a scheme such as the following must be employed
 to recover safely:
 
 ```python
 import torch
-import os
-from pccl import Communicator, ReduceOp, Attribute, ReduceOperandDescriptor, DataType, DistributionHint, QuantizationOptions, QuantizationAlgorithm
-
-RANK: int = int(os.getenv('RANK', "0"))
+from pccl import Communicator, ReduceOp, Attribute, ReduceOperandDescriptor, DataType, DistributionHint, QuantizationOptions, QuantizationAlgorithm, ReduceDescriptor, ReduceOpDescriptor, PCCLError
 
 def all_reduce_multiple_with_retry(communicator: Communicator,
                                    tensors: list[torch.Tensor],
                                    op: ReduceOp,
-                                   max_in_flight: int = 8):
+                                   max_in_flight: int = 16):
     """
     Launches concurrent all-reduce operations on a list of tensors,
     waits for them all, and retries if a peer fails or the world size changes.
     Will attempt to target :param max_in_flight: concurrent all-reduce operations.
     The more similar your tensors are in size, the better this in flight system will work.
-    Future versions of PCCL may provide a "wait for any of multiple async ops" api to improve this pattern.
+    """
+    descriptors = []
+    tag = 0
+    for tensor in tensors:
+        reduce_op_descriptor = ReduceOpDescriptor.from_torch(
+            send=tensor,
+            recv=tensor,
+            reduce_descriptor=ReduceDescriptor(
+                count=tensor.numel(),
+                op=op,
+                tag=tag,
+                operand_descriptor=ReduceOperandDescriptor(
+                    datatype=DataType.FLOAT,
+                    distribution_hint=DistributionHint.NORMAL
+                ),
+                quantization_options=QuantizationOptions(
+                    quantized_datatype=DataType.FLOAT,
+                    algorithm=QuantizationAlgorithm.NONE
+                )
+            )
+        )
+        descriptors.append(reduce_op_descriptor)
+        tag += 1
+    try:
+        info = communicator.all_reduce_multiple_with_retry(descriptors, max_in_flight=max_in_flight)
+        return True, info.tx_bytes, info.rx_bytes
+    except PCCLError:
+        return False, 0, 0
+
+def all_reduce_multiple_with_retry__equivalent(communicator: Communicator,
+                                   tensors: list[torch.Tensor],
+                                   op: ReduceOp,
+                                   max_in_flight: int = 16):
+    """
+    The following function is equivalent to the above, but uses a more manual approach. (Not recommended for production)
     """
     world_size = communicator.get_attribute(Attribute.GLOBAL_WORLD_SIZE)
 
@@ -681,7 +712,7 @@ def all_reduce_multiple_with_retry(communicator: Communicator,
             is_success, status, info = handle.wait()
             world_size = communicator.get_attribute(Attribute.GLOBAL_WORLD_SIZE)
             if not is_success:
-                print(f"(RANK={RANK}) Reduce failed: {status}; Starting recovery procedure")
+                print(f"Reduce failed: {status}; Starting recovery procedure")
                 handles[tensor_index] = None
                 # Wait for all ongoing ops to finish or fail before retry
                 for j in range(len(tensors)):
@@ -708,11 +739,11 @@ def all_reduce_multiple_with_retry(communicator: Communicator,
 
         if all_done:
             print(
-                f"(RANK={RANK}) Reduce completed RX: {total_rx}, TX: {total_tx}; world_size: {world_size}")
+                f"Reduce completed RX: {total_rx}, TX: {total_tx}; world_size: {world_size}")
             break
 
     if world_size == 1:
-        print(f"(RANK={RANK}) All peers have left except this peer. All reduce will do nothing.")
+        print(f"All peers have left except this peer. All reduce will do nothing.")
         # If we are alone, just finalize all handles and return
         for h in handles:
             if h is not None:
@@ -720,17 +751,4 @@ def all_reduce_multiple_with_retry(communicator: Communicator,
         return False
 
     return True
-```
-
-This pattern can be utilized as follows in your main training loop:
-```python
-        gradients = [torch.randn(128, 128, dtype=torch.float32) for _ in range(10)]
-        all_reduce_multiple_with_retry(communicator, gradients, ReduceOp.SUM, max_in_flight=8)
-        if world_size == 1:
-            # drop current step, as we are alone in the run and whatever we just computed would induce too much noise if we stepped here.
-            # If one accepts the pattern that one waits until the world size is at least two, it would be erroneous to step here.
-            print(
-                "All peers have left except this peer. Dropping current step to avoid inducing too much variance with our local batch!")
-            shared_state.revision += 1
-            continue
 ```

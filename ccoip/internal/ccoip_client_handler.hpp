@@ -95,6 +95,10 @@ namespace ccoip {
 
         [[nodiscard]] size_t getLocalWorldSize() const;
 
+        [[nodiscard]] size_t getLargestPeerGroupWorldSize() const;
+
+        [[nodiscard]] size_t getNumDistinctPeerGroups() const;
+
         void setMainThread(const std::thread::id main_thread_id);
 
     private:

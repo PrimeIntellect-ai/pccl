@@ -30,7 +30,7 @@ The master runs a single-threaded event loop (currently using `libuv`) that list
 
 
 ### Single-Threaded, Deterministic State
-Since the master is conceptually a big “authoritative state machine,” it does not attempt to parallelize. Each inbound request from a client (join, sync, etc.) triggers an update in that shared `client_info[]` table or in one of the vote sets (like `votes_accept_new_peers`). The result is then broadcast back to clients as needed. Because everything is done in a single thread, we avoid race conditions in the core run state.
+Since the master is conceptually a big “authoritative state machine”. Each inbound request from a client (join, sync, etc.) triggers a state update or transition. Particular state transitions trigger confirmation packets to be sent to clients to proceed.
 
 ### Master Crash = End of Run
 If the master node process crashes or is forcibly killed, the peer side eventually sees “lost connection” errors. There is no built-in “master re-election” or replication. The recommended approach is to:
@@ -42,8 +42,10 @@ If the master node process crashes or is forcibly killed, the peer side eventual
 It should be noted that CCoIP itself is not designed to "retain" shared state, simply to distribute it while a run is ongoing. If a run does indeed crawl to a halt, the shared state is lost. Therefore, it is recommended that peers save their own shared state to disk periodically, and reload it on restart.
 As PCCL guarantees bit-identical shared state among all peers at all times, it is expected that after peers load their saved shared state from disk and begin synchronizing the shared state again, that all previously connected peers will unanimously agree on the shared state hashes and continue from there.
 
+However, it should be noted that a crash of the master process is very unlikely.
+
 ### Topology Optimization (Bandwidth Tests & TSP)
-One of PCCL’s features is `bandwidth-aware ring ordering`. Since ring-based reduce can be bottlenecked by the slowest link, it helps to measure peer-to-peer throughput and reorder accordingly.
+One of PCCL’s features is "bandwidth-aware ring ordering". Since ring-based reduce can be bottlenecked by the slowest link, it helps to measure peer-to-peer throughput and reorder accordingly.
 
 1. **Bandwidth Store**: The master keeps an asymmetric cost matrix (`BandwidthStore`) of measured bandwidth from peer A to peer B.
 2. **Benchmark Requests**: When a peer calls `pcclOptimizeTopology`, the master identifies missing edges (i.e., pairs not yet measured) and instructs the relevant peer(s) to do a quick TCP test.
@@ -100,15 +102,15 @@ PCCL’s All-Reduce uses a pipeline ring approach:
 - **Queued-Sockets:** If two internal threads might read from the same socket, PCCL enforces a queue mechanism to route matching packets to the correct consumer via predicate matching.
 
 ### Overall Rule: One Operation at a Time (Per Group)
-Because the master enforces that the entire group do the same operation in lockstep, you **NEVER** need your own concurrency around these calls.
+Because the master enforces that the entire group do the same operation in lockstep, you rarely need your own concurrency around these calls.
 The library expects you not to overlap, say, an All-Reduce with a shared-state sync in the same communicator - neither through means
 of the native concurrency features implemented by PCCL (`pcclAllReduceAsync`, `pcclAwaitAsyncReduce`), nor through the use of concurrent threads.
 The only exception to this rule is that it is allowed to launch multiple async collective communications without awaiting the respective previous handle - in other words, multiple async collective communications operations may be in flight at the same time.
 Note however that even in this case the overarching "Operation" is "performing collective communications operations" and *only* performing collective communications operations.
 
 ### Threadsafe
-PCCL is also **NOT THREADSAFE** and should only ever be used from the main thread.
-PCCL will enforce that public facing apis are called on the main thread registered for the communicator.
+PCCL is generally not threadsafe and should only ever be used from the main thread (except in case of stated exceptions).
+PCCL will generally enforce that public facing apis are called on the main thread registered for the communicator.
 
 #### There are some exceptions to this rule:
 PCCL allows the user to launch and await multiple async collective operations from threads other than the main thread, as long as the main thread

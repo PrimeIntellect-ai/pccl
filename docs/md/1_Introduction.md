@@ -50,9 +50,20 @@ PCCL can benchmark peer-to-peer links and solve a traveling-salesman-like proble
 PCCL is written in C++ with portability to Linux, Windows, and macOS. It supports pointers to host or CUDA device memory for collectives and shared-state. While not as hardware-specialized as NCCL, it aims for wide compatibility—including Apple Silicon (ARM64) and x86_64.
 
 ### No Specialized Network Hardware Required
-Uses standard TCP sockets. Suitable for clusters without InfiniBand or HPC fabrics, or even cloud VMs with only public IP addresses. Configuration for NAT/firewalls is possible by opening a small port range (recommended: ~200 ports) above the master’s port (`48148` by default).
+Uses standard TCP sockets. Suitable for clusters without InfiniBand or HPC fabrics, or even cloud VMs with only public IP addresses.
 
-Overall, PCCL aspires to combine flexible, fault-tolerant distributed training with large-tensor capabilities—especially for wide-area or more loosely orchestrated environments—while still offering an API reminiscent of conventional collective communication libraries.
+### Ports
+A PCCL master must always be on the following port:
+- `48148` - Master endpoint
+
+A PCCL peer by default will bind to the following ports:
+- `48149` - Shared state transmission endpoint
+- `48150` - P2P connection endpoint
+- `48151` - bandwidth testing endpoint
+
+If those ports cannot be bound to, PCCL will attempt to bind to the next available port above the respective port.
+This is useful e.g. if you are hosting multiple peers on the same host, where there would otherwise be a port conflict.
+We recommend port forwarding a small range of ports above `48148`, proportional to the number of peers you want to run on the same host.
 
 ## Project Status / Roadmap
 
@@ -68,5 +79,6 @@ PCCL is under active development. While core features like ring-based All-Reduce
 - **Enhanced Quantization Schemes**: Current min–max quantization may expand to include stochastic rounding, 4-bit quantization or compression schemes for reducing bandwidth.
 
 ### Intended Use Cases
-The library is primarily aimed at training scenarios where nodes may run over commodity Ethernet or WAN connections, or in dynamic settings where peers come and go. Although it can be used on HPC clusters, specialized libraries like NCCL even over Ethernet will greatly outperform PCCL there—unless the extra fault tolerance is a higher priority.
-
+The library is primarily aimed at training scenarios where nodes may run over commodity Ethernet or WAN connections, or in dynamic settings where peers are expected to join and non-gracefully leave.
+PCCL does not directly compete with traditional MPI libraries with respect to saturating high-speed interconnects. 
+PCCL requires Ethernet or TCP/IP connectivity, and is not designed for low-latency, high-bandwidth fabrics like InfiniBand or Cray Aries.

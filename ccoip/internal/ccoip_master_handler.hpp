@@ -55,9 +55,9 @@ namespace ccoip {
         ~CCoIPMasterHandler();
 
     private:
-        void sendP2PConnectionInformation(bool changed, const ClientInfo &client_info);
+        void sendP2PConnectionInformation(bool changed, const ClientInfo &client_info, bool include_registered);
 
-        void sendP2PConnectionInformation();
+        void sendP2PConnectionInformation(bool include_registered);
 
         [[nodiscard]] bool checkEstablishP2PConnectionConsensus();
 

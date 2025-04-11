@@ -615,7 +615,7 @@ def main():
         dt = t1 - t0
 
         # We'll do the MFU calculation for reference
-        tokens_this_iter = config["batch_size"] * config["gradient_accumulation_steps"] * config["inner_steps"] * config["block_size"]
+        tokens_this_iter = config["batch_size"] * config["gradient_accumulation_steps"] * config["inner_steps"]
         raw_model.eval()  # to call estimate_mfu
         mfu = raw_model.estimate_mfu(tokens_this_iter, dt)
         raw_model.train()

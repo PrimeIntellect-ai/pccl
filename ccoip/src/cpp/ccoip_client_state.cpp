@@ -21,8 +21,7 @@ void ccoip::CCoIPClientState::setMainThread(const std::thread::id main_thread_id
 }
 
 std::vector<uint64_t> ccoip::CCoIPClientState::getRunningCollectiveComsOpTags() {
-    std::vector<uint64_t> running_collective_coms_op_tags;
-    {
+    std::vector<uint64_t> running_collective_coms_op_tags; {
         std::shared_lock lock(running_collective_coms_ops_tags_mutex);
         running_collective_coms_op_tags.reserve(running_collective_coms_ops_tags.size());
         for (const auto tag: running_collective_coms_ops_tags) {
@@ -67,6 +66,14 @@ void ccoip::CCoIPClientState::setGlobalWorldSize(const size_t new_global_world_s
 
 void ccoip::CCoIPClientState::setLocalWorldSize(const size_t new_local_world_size) {
     local_world_size.store(new_local_world_size, std::memory_order_release);
+}
+
+void ccoip::CCoIPClientState::setNumDistinctPeerGroups(const size_t new_num_distinct_peer_groups) {
+    num_distinct_peer_groups.store(new_num_distinct_peer_groups, std::memory_order_release);
+}
+
+void ccoip::CCoIPClientState::setLargestPeerGroupWorldSize(const size_t new_largest_peer_group_world_size) {
+    largest_peer_group_world_size.store(new_largest_peer_group_world_size, std::memory_order_release);
 }
 
 const ccoip_uuid_t &ccoip::CCoIPClientState::getAssignedUUID() const {
@@ -145,6 +152,14 @@ bool ccoip::CCoIPClientState::isAnyCollectiveComsOpRunning() {
 size_t ccoip::CCoIPClientState::getLocalWorldSize() const { return local_world_size.load(std::memory_order_acquire); }
 
 size_t ccoip::CCoIPClientState::getGlobalWorldSize() const { return global_world_size.load(std::memory_order_acquire); }
+
+size_t ccoip::CCoIPClientState::getNumDistinctPeerGroups() const {
+    return num_distinct_peer_groups.load(std::memory_order_acquire);
+}
+
+size_t ccoip::CCoIPClientState::getLargestPeerGroupWorldSize() const {
+    return largest_peer_group_world_size.load(std::memory_order_acquire);
+}
 
 bool ccoip::CCoIPClientState::startCollectiveComsOp(const uint64_t tag) {
     std::unique_lock guard{running_collective_coms_ops_tags_mutex};

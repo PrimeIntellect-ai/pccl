@@ -83,7 +83,8 @@ void reduceTest(const ccoip::ccoip_reduce_op_t reduce_op,
                 const uint64_t seed,
                 const std::function<ValueType(ValueType, ValueType)> &op,
                 size_t num_clients,
-                const bool init_random = true)
+                const bool init_random = true,
+                bool use_src_eq_dst = false)
 {
     GUARD_PORT(CCOIP_PROTOCOL_PORT_MASTER);
     // Launch master
@@ -170,18 +171,33 @@ void reduceTest(const ccoip::ccoip_reduce_op_t reduce_op,
 
         client->setMainThread(std::this_thread::get_id());
 
-        auto &result = results[c] = std::make_unique<ValueType[]>(n_elements);
-        std::fill_n(result.get(), n_elements, ValueType{});
+        if (!use_src_eq_dst) {
+            auto &result = results[c] = std::make_unique<ValueType[]>(n_elements);
+            std::fill_n(result.get(), n_elements, ValueType{});
 
-        // Perform the asynchronous all-reduce
-        ASSERT_TRUE(client->allReduceAsync(client_values[c].get(),
-                                           result.get(),
-                                           n_elements,
-                                           ccoip_type,
-                                           ccoip_type,
-                                           quant_algo,
-                                           reduce_op,
-                                           1));
+            // Perform the asynchronous all-reduce
+            ASSERT_TRUE(client->allReduceAsync(client_values[c].get(),
+                                               result.get(),
+                                               n_elements,
+                                               ccoip_type,
+                                               ccoip_type,
+                                               quant_algo,
+                                               reduce_op,
+                                               1));
+        } else {
+            auto &dest = results[c] = std::make_unique<ValueType[]>(n_elements);
+            std::memcpy(dest.get(), client_values[c].get(), n_elements * sizeof(ValueType));
+
+            // Perform the asynchronous all-reduce
+            ASSERT_TRUE(client->allReduceAsync(dest.get(),
+                                               dest.get(),
+                                               n_elements,
+                                               ccoip_type,
+                                               ccoip_type,
+                                               quant_algo,
+                                               reduce_op,
+                                               1));
+        }
     }
 
     // Wait for all clients to finish
@@ -220,6 +236,19 @@ TYPED_TEST(TypeAllReduceTest, TestSumWorldSize2LargeArray) {
                           2);
 }
 
+TYPED_TEST(TypeAllReduceTest, TestSumWorldSize2LargeArray_SrcPtrEqDstPtr) {
+    using ValueType = TypeParam;
+    reduceTest<ValueType>(ccoip::ccoipOpSum,
+                          ccoip::ccoipQuantizationNone,
+                          203530,
+                          42,
+                          [](ValueType a, ValueType b) { return a + b; },
+                          2,
+                          /*init_random=*/false,
+                          /*use_src_eq_dst*/true);
+}
+
+
 TYPED_TEST(TypeAllReduceTest, TestSumWorldSize3NumElements2) {
     using ValueType = TypeParam;
     reduceTest<ValueType>(ccoip::ccoipOpSum,
@@ -229,6 +258,19 @@ TYPED_TEST(TypeAllReduceTest, TestSumWorldSize3NumElements2) {
                           [](const ValueType a, const ValueType b) { return a + b; },
                           3,
                           /*init_random=*/false);
+}
+
+
+TYPED_TEST(TypeAllReduceTest, TestSumWorldSize3NumElements2_SrcPtrEqDstPtr) {
+    using ValueType = TypeParam;
+    reduceTest<ValueType>(ccoip::ccoipOpSum,
+                          ccoip::ccoipQuantizationNone,
+                          2,
+                          42,
+                          [](const ValueType a, const ValueType b) { return a + b; },
+                          3,
+                          /*init_random=*/false,
+                          /*use_src_eq_dst*/true);
 }
 
 TYPED_TEST(TypeAllReduceTest, TestSumWorldSize3NumElements3) {
@@ -242,6 +284,20 @@ TYPED_TEST(TypeAllReduceTest, TestSumWorldSize3NumElements3) {
                           /*init_random=*/false);
 }
 
+
+
+TYPED_TEST(TypeAllReduceTest, TestSumWorldSize3NumElements3_SrcPtrEqDstPtr) {
+    using ValueType = TypeParam;
+    reduceTest<ValueType>(ccoip::ccoipOpSum,
+                          ccoip::ccoipQuantizationNone,
+                          3,
+                          42,
+                          [](const ValueType a, const ValueType b) { return a + b; },
+                          3,
+                          /*init_random=*/false,
+                          /*use_src_eq_dst*/true);
+}
+
 TEST(TypeAllReduceTest, TestSumWorldSize4NumElements2) {
     using ValueType = float;
     reduceTest<ValueType>(ccoip::ccoipOpSum,
@@ -252,6 +308,20 @@ TEST(TypeAllReduceTest, TestSumWorldSize4NumElements2) {
                           4,
                           /*init_random=*/false);
 }
+
+
+TEST(TypeAllReduceTest, TestSumWorldSize4NumElements2_SrcPtrEqDstPtr) {
+    using ValueType = float;
+    reduceTest<ValueType>(ccoip::ccoipOpSum,
+                          ccoip::ccoipQuantizationNone,
+                          2,
+                          42,
+                          [](const ValueType a, const ValueType b) { return a + b; },
+                          4,
+                          /*init_random=*/false,
+                          /*use_src_eq_dst*/true);
+}
+
 
 TYPED_TEST(QuantizeTypedAllReduceTest, TestSumQuantizedWorldSize2) {
     GUARD_PORT(CCOIP_PROTOCOL_PORT_MASTER);

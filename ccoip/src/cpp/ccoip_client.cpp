@@ -60,8 +60,14 @@ bool ccoip::CCoIPClient::isAnyCollectiveComsOpRunning() const {
     return client->isAnyCollectiveComsOpRunning();
 }
 
-size_t ccoip::CCoIPClient::getGlobalWorldSize() const {
-    return client->getGlobalWorldSize();
+size_t ccoip::CCoIPClient::getGlobalWorldSize() const { return client->getGlobalWorldSize(); }
+
+size_t ccoip::CCoIPClient::getNumDistinctPeerGroups() const {
+    return client->getNumDistinctPeerGroups();
+}
+
+size_t ccoip::CCoIPClient::getLargestPeerGroupWorldSize() const {
+    return client->getLargestPeerGroupWorldSize();
 }
 
 size_t ccoip::CCoIPClient::getLocalWorldSize() const {

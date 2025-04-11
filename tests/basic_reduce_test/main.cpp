@@ -42,7 +42,7 @@ int main() {
     int world_size{};
     pcclGetAttribute(communicator, PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE, &world_size);
 
-    constexpr size_t n_elements = 1024 * 1024 * 256;
+    constexpr size_t n_elements = 1024 * 1024 * 4;
     const auto weights = new float[n_elements];
     fill_uniform(weights, n_elements);
 

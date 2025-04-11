@@ -51,8 +51,8 @@ def all_reduce_multiple_with_retry(communicator: Communicator,
                     distribution_hint=DistributionHint.NORMAL
                 ),
                 quantization_options=QuantizationOptions(
-                    quantized_datatype=DataType.UINT8,
-                    algorithm=QuantizationAlgorithm.MIN_MAX
+                    quantized_datatype=DataType.FLOAT,
+                    algorithm=QuantizationAlgorithm.NONE
                 )
             )
         )
@@ -292,7 +292,7 @@ def main():
     start_iter_num = 0
     if init_from == 'resume':
         inner_optimizer.load_state_dict(checkpoint['optimizer'])
-        start_iter_num = checkpoint['iter_num']
+        jj1 = checkpoint['iter_num']
         del checkpoint  # free memory
 
     if config["compile"]:

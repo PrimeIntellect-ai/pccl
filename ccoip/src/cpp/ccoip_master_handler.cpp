@@ -221,7 +221,7 @@ void ccoip::CCoIPMasterHandler::handleRequestSessionJoin(const ccoip_socket_addr
 
     // if this is the first peer, simply send empty p2p connection information
     if (server_state.getClientSocketAddresses().size() == 1) {
-        sendP2PConnectionInformation();
+        sendP2PConnectionInformation(true);
     } else {
         // otherwise still check if we have consensus to accept new peers
         if (!checkEstablishP2PConnectionConsensus()) [[unlikely]] {
@@ -296,7 +296,7 @@ bool ccoip::CCoIPMasterHandler::checkP2PConnectionsEstablished() {
 
             // TODO: implement real topology optimization,
             //  for now we assert ring reduce and return the ring order to be ascending order of client uuids
-            const auto topology = server_state.getRingTopology(peer_info.peer_group);
+            const auto topology = server_state.getRingTopology(peer_info.peer_group, false);
 
             packet.ring_reduce_order = topology;
 
@@ -345,7 +345,9 @@ bool ccoip::CCoIPMasterHandler::checkEstablishP2PConnectionConsensus() {
             LOG(BUG) << "Failed to transition to P2P establishment phase. This is a bug!";
             return false;
         }
-        sendP2PConnectionInformation();
+        // we do include REGISTERED peers in the world size stats because they will become accepted,
+        // if this phase completes successfully, which must happen before peers are allowed to proceed.
+        sendP2PConnectionInformation(true);
     }
 
     // check if all clients have voted to establish p2p connections without accepting new peers
@@ -356,7 +358,9 @@ bool ccoip::CCoIPMasterHandler::checkEstablishP2PConnectionConsensus() {
             LOG(BUG) << "Failed to transition to P2P establishment phase. This is a bug!";
             return false;
         }
-        sendP2PConnectionInformation();
+        // we don't include REGISTERED peers in the world size stats because they will not get accepted
+        // here because peers have voted not to do so.
+        sendP2PConnectionInformation(false);
     }
     return true;
 }
@@ -1336,18 +1340,23 @@ void ccoip::CCoIPMasterHandler::handleEstablishP2PConnections(const ccoip_socket
     }
 }
 
-ccoip::CCoIPMasterHandler::~CCoIPMasterHandler() = default;
+ccoip::CCoIPMasterHandler::~CCoIPMasterHandler() {
+    topology_optimization_threadpool.shutdown();
+}
 
-void ccoip::CCoIPMasterHandler::sendP2PConnectionInformation(const bool changed, const ClientInfo &peer_info) {
+void ccoip::CCoIPMasterHandler::sendP2PConnectionInformation(const bool changed, const ClientInfo &peer_info,
+                                                             const bool include_registered) {
     M2CPacketP2PConnectionInfo new_peers{};
     new_peers.unchanged = !changed;
     new_peers.global_world_size = server_state.getGlobalWorldSize();
-    new_peers.local_world_size = server_state.getLocalWorldSize(peer_info.peer_group);
+    new_peers.local_world_size = server_state.getLocalWorldSize(peer_info.peer_group, include_registered);
+    new_peers.num_distinct_peer_groups = server_state.getNumDistinctPeerGroups(include_registered);
+    new_peers.largest_peer_group_world_size = server_state.getLargestPeerGroupWorldSize(include_registered);
 
     const auto peer_address = peer_info.socket_address;
 
     if (changed) {
-        const auto peers = server_state.getPeersForClient(peer_address, peer_info); // get the peers for the client
+        const auto peers = server_state.getPeersForClient(peer_address, peer_info, include_registered); // get the peers for the client
         new_peers.all_peers.reserve(peers.size());
         for (const auto &client_info: peers) {
             // construct a new peers packet
@@ -1368,7 +1377,7 @@ void ccoip::CCoIPMasterHandler::sendP2PConnectionInformation(const bool changed,
     }
 }
 
-void ccoip::CCoIPMasterHandler::sendP2PConnectionInformation() {
+void ccoip::CCoIPMasterHandler::sendP2PConnectionInformation(const bool include_registered) {
     const bool changed = server_state.hasPeerListChanged(CALLSITE_P2P_CONNECTION_INFORMATION) ||
                          server_state.hasTopologyChanged(CALLSITE_P2P_CONNECTION_INFORMATION);
 
@@ -1385,6 +1394,6 @@ void ccoip::CCoIPMasterHandler::sendP2PConnectionInformation() {
         }
 
         // for all connected clients
-        sendP2PConnectionInformation(changed, peer_info);
+        sendP2PConnectionInformation(changed, peer_info, include_registered);
     }
 }

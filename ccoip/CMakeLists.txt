@@ -35,6 +35,7 @@ target_link_libraries(ccoip_internal PUBLIC tinysockets)
 target_link_libraries(ccoip_internal PRIVATE pccl_log)
 target_link_libraries(ccoip_internal PRIVATE tsp)
 target_link_libraries(ccoip_internal PRIVATE threadpool)
+target_link_libraries(ccoip_internal PRIVATE threadpark)
 
 if (PCCL_BUILD_CUDA_SUPPORT)
     target_link_libraries(ccoip_internal PUBLIC CUDA::cuda_driver)

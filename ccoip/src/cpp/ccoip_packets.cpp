@@ -199,6 +199,8 @@ void ccoip::M2CPacketP2PConnectionInfo::serialize(PacketWriteBuffer &buffer) con
     buffer.write<boolean>(unchanged);
     buffer.write<uint64_t>(global_world_size);
     buffer.write<uint64_t>(local_world_size);
+    buffer.write<uint64_t>(num_distinct_peer_groups);
+    buffer.write<uint64_t>(largest_peer_group_world_size);
     if (unchanged) {
         return;
     }
@@ -232,6 +234,8 @@ bool ccoip::M2CPacketP2PConnectionInfo::deserialize(PacketReadBuffer &buffer) {
     unchanged = buffer.read<boolean>();
     global_world_size = buffer.read<uint64_t>();
     local_world_size = buffer.read<uint64_t>();
+    num_distinct_peer_groups = buffer.read<uint64_t>();
+    largest_peer_group_world_size = buffer.read<uint64_t>();
     if (unchanged) {
         return true;
     }

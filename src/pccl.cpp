@@ -40,21 +40,29 @@ pcclResult_t pcclGetAttribute(const pcclComm_t *communicator,
     PCCL_VALIDATE(communicator->ccoip_client != nullptr, pcclInvalidUsage);
     PCCL_VALIDATE(p_attribute_out != nullptr, pcclInvalidArgument);
 
+    int value{};
     switch (attribute) {
         case PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE: {
-            const size_t world_size = communicator->ccoip_client->getGlobalWorldSize();
-            *p_attribute_out = static_cast<int>(world_size);
+            value = static_cast<int>(communicator->ccoip_client->getGlobalWorldSize());
             break;
         }
         case PCCL_ATTRIBUTE_PEER_GROUP_WORLD_SIZE: {
-            const size_t world_size = communicator->ccoip_client->getLocalWorldSize();
-            *p_attribute_out = static_cast<int>(world_size);
+            value = static_cast<int>(communicator->ccoip_client->getLocalWorldSize());
+            break;
+        }
+        case PCCL_ATTRIBUTE_NUM_DISTINCT_PEER_GROUPS: {
+            value = static_cast<int>(communicator->ccoip_client->getNumDistinctPeerGroups());
+            break;
+        }
+        case PCCL_ATTRIBUTE_LARGEST_PEER_GROUP_WORLD_SIZE: {
+            value = static_cast<int>(communicator->ccoip_client->getLargestPeerGroupWorldSize());
             break;
         }
         default: {
             [[unlikely]] return pcclInvalidArgument;
         }
     }
+    *p_attribute_out = value;
     return pcclSuccess;
 }
 

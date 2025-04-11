@@ -179,6 +179,42 @@ buffers as well.
 ### `pcclAllReduce`
 
 ```c
+typedef enum pcclDataType_t {
+    pcclUint8 = 0,
+    pcclInt8 = 1,
+    ...
+    pcclFloat = 8,
+    pcclDouble = 9
+} pcclDataType_t;
+
+
+typedef enum pcclDistributionHint_t {
+    PCCL_DISTRIBUTION_HINT_NONE = 0,
+    PCCL_NORMAL_DISTRIBUTION_HINT = 1,
+    PCCL_UNIFORM_DISTRIBUTION_HINT = 2
+} pcclDistributionHint_t;
+
+typedef struct pcclReduceOperandDescriptor_t {
+    pcclDataType_t datatype;
+    pcclDistributionHint_t distribution_hint;
+} pcclReduceOperandDescriptor_t;
+
+typedef enum pcclRedOp_t {
+    pcclSum,
+    pcclAvg,
+    pcclProd,
+    pcclMax,
+    pcclMin
+} pcclRedOp_t;
+
+typedef struct pcclReduceDescriptor_t {
+    size_t count;
+    pcclRedOp_t op;
+    uint64_t tag;
+    pcclReduceOperandDescriptor_t src_descriptor;
+    pcclQuantizationOptions_t quantization_options;
+} pcclReduceDescriptor_t;
+
 pcclResult_t pcclAllReduce(const void *sendbuff,
                            void *recvbuff,
                            const pcclReduceDescriptor_t *descriptor,
@@ -188,10 +224,15 @@ pcclResult_t pcclAllReduce(const void *sendbuff,
 
 A blocking All-Reduce call:
 
-- `sendbuff`, `recvbuff`: Pointers to user-allocated memory. If they’re the same pointer, in-place reduce is done. (
-  Note, sendbuff == recvbuff will trigger internal memory allocation.)
-- `descriptor->op`: Summation, product, min, max, or average.
-- `descriptor->quantization_options`:  If you want to compress data in flight.
+- `sendbuff`, `recvbuff`: Pointers to user-allocated memory. If they’re the same pointer, in-place reduce is done. (sendbuff == recvbuff is recommended for performance to avoid an internal memcpy).
+- `descriptor`: A `pcclReduceDescriptor_t` structure that describes the reduce operation.
+  - `descriptor->count`: Number of elements to reduce. This is the number of elements in the send buffer.
+  - `descriptor->op`: The kind of reduce operation to perform (e.g., sum, min, max, etc.). This is a `pcclRedOp_t` enum.
+  - `descriptor->tag`: A unique tag for this operation. Should be unique for each operation per step. This tag must not collide with respect to currently ongoing all reduces.
+  - `descriptor->src_descriptor`: A `pcclReduceOperandDescriptor_t` structure that describes the source buffer. This is used to specify the type of data in the send buffer and how it should be interpreted.
+    - `descriptor->src_descriptor.datatype`: The data type of the elements in the send buffer. This is a `pcclDataType_t` enum.
+    - `descriptor->src_descriptor.distribution_hint`: A hint about the distribution of the data in the send buffer. This is a `pcclDistributionHint_t` enum.
+  - `descriptor->quantization_options`:  If you want to compress data in flight.
 - `reduce_info_out`: (optional) stats about how many bytes were transmitted or received.
 
 #### Error Handling:
@@ -201,7 +242,6 @@ A blocking All-Reduce call:
 - `pcclInvalidUsage`: if you haven’t connected or if the communicator is in an illegal state.
 
 ### `pcclAllReduceAsync(...) / pcclAwaitAsyncReduce(...)`
-
 ```c
 pcclResult_t pcclAllReduceAsync(const void *sendbuff,
                                 void *recvbuff,
@@ -231,6 +271,40 @@ If `pcclAreNewPeersPending` returns `true`, the main thread should call `pcclUpd
 However, before doing so, the main thread must ensure that all outstanding async operations have completed awaiting the concurrent thread which must call `pcclAwaitAsyncReduce`.
 If `pcclAreNewPeersPending` returns `false`, the main thread can safely skip calling `pcclUpdateTopology` without risking delaying the acceptance of new peers.
 This is useful such that new compute can be started from the main thread without waiting for the completion of outstanding async operations without risking delaying the acceptance of new peers.
+
+#### Error Handling:
+Error handling is similar to the blocking version, but depending on whether the error occurs during the actual reduce operation
+or is already apparent when calling `pcclAwaitAsyncReduce`, the error will be returned either by `pcclAllReduceAsync` or `pcclAwaitAsyncReduce`.
+Generally, under correct usage you can expect `pcclAllReduceAsync` never to fail, while `pcclAwaitAsyncReduce` requires special recovery handling.
+
+### `pcclAllReduceMultipleWithRetry`
+```c
+typedef struct pcclReduceSingleDescriptor_t {
+    void *sendbuf;
+    void *recvbuf;
+    pcclReduceDescriptor_t descriptor;
+} pcclReduceOpDescriptor_t;
+
+pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *descriptors,
+                                            size_t count,
+                                            const pcclComm_t *communicator,
+                                            pcclReduceInfo_t *PCCL_NULLABLE reduce_info_out,
+                                            int max_in_flight);
+```
+Performs multiple all reduces concurrently.
+If any of the all reduce operations fail, the function will await all outstanding operations and retry the failed ones.
+The function will not complete until all operations have completed successfully or the local world size has dropped below 2.
+While it is possible to replicate the semantings of this function with `pcclAllReduceAsync` and `pcclAwaitAsyncReduce`,
+we do not recommend doing so, as the retry logic is non-trivial and requires special care to ensure that the retry does not deadlock.
+
+NOTE: Different reduce operations may have been performed with different local world sizes if peers dropped out during the operation.
+The local world size populated in the reduce info will be the local world size after all operations have completed. No veracity guarantees are made about this value beyond for heuristic usage.
+
+- `descriptors`: An array of `pcclReduceSingleDescriptor_t` structures, each containing the send and receive buffers and the reduce descriptor.
+- `count`: The number of reduce operations to perform. Equal to the size of the `descriptors` array.
+- `communicator`: The communicator object to use for the operation.
+- `reduce_info_out`: (optional) stats about how many bytes were transmitted or received.
+- `max_in_flight`: The maximum number of concurrent operations to perform. This is useful for limiting the number of concurrent operations to avoid overwhelming the network or the system.
 
 ### Shared-State Synchronization
 
@@ -274,7 +348,9 @@ pcclResult_t pcclGetAttribute(const pcclComm_t *communicator,
 
 Retrieves specific integer-valued attributes from the communicator. Currently:
 
-- `PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE`: The total number of “accepted” peers in the same peer group as this communicator.
+- `PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE`: The total number of “accepted” peers in the run (master not included, as it is not considered a peer and has a strictly administrative role).
+- `PCCL_ATTRIBUTE_PEER_GROUP_WORLD_SIZE`: The number of peers in the same peer group as this communicator.
+- `PCCL_ATTRIBUTE_NUM_DISTINCT_PEER_GROUPS`: The number of distinct peer groups defined in the run. A peer group is considered defined if at least one peer has declared a particular integer value to be its peer group and has been accepted into the run.
 
 Common use:
 
@@ -283,8 +359,11 @@ int world_size;
 pcclGetAttribute(communicator, PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE, &world_size);
 ```
 
-`Important`: This is only up-to-date if called after the last invocation of `pcclUpdateTopology()` or `pcclConnect()` if
-the communicator just joined the run.
+`Important`: This captures a snapshot of the current state.
+The currently tracked attributes may change after every pccl api call.
+If veracity of the attribute is important (e.g. to base application-logic branching decision on), the user must ensure that the attribute is up-to-date by re-obtaining it after
+the relevant api call.
+E.g. `PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE` may change after `pcclConnect`, `pcclUpdateTopology`, `pcclOptimizeTopology`, and after collective operations.
 
 ## Error Handling & Logging
 

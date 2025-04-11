@@ -294,20 +294,16 @@ namespace ccoip {
         std::unordered_map<uint32_t, std::unordered_set<ccoip_uuid_t>> votes_sync_shared_state_complete{};
 
         /// Flag per "callsite" to indicate if the peer list has changed;
-        /// Each call-site defines separate scope for checking whether the peer list has changed since the last invocation from said call site.
-        /// See @code hasPeerListChanged@endcode
-        std::unordered_map<uint32_t, bool> peer_list_changed{
-            {CALLSITE_TOPOLOGY_OPTIMIZATION_COMPLETE, false},
-            {CALLSITE_P2P_CONNECTION_INFORMATION, false}
-        };
+        /// Each call-site defines separate scope for checking whether the peer list has changed since the last
+        /// invocation from said call site. See @code hasPeerListChanged@endcode
+        std::unordered_map<uint32_t, bool> peer_list_changed{{CALLSITE_TOPOLOGY_OPTIMIZATION_COMPLETE, false},
+                                                             {CALLSITE_P2P_CONNECTION_INFORMATION, false}};
 
         /// Flag per "callsite" to indicate if the topology has changed;
-        /// Each call-site defines separate scope for checking whether the peer list has changed since the last invocation from said call site.
-        /// See @code hasTopologyChanged@endcode
-        std::unordered_map<uint32_t, bool> topology_changed{
-            {CALLSITE_TOPOLOGY_OPTIMIZATION_COMPLETE, false},
-            {CALLSITE_P2P_CONNECTION_INFORMATION, false}
-        };
+        /// Each call-site defines separate scope for checking whether the peer list has changed since the last
+        /// invocation from said call site. See @code hasTopologyChanged@endcode
+        std::unordered_map<uint32_t, bool> topology_changed{{CALLSITE_TOPOLOGY_OPTIMIZATION_COMPLETE, false},
+                                                            {CALLSITE_P2P_CONNECTION_INFORMATION, false}};
 
         /// Defines the "mask" of shared state entries for each peer group.
         /// The mask is defined by the identity of the set of shared state key strings and their corresponding hashes.
@@ -325,7 +321,7 @@ namespace ccoip {
         /// Peer group bin is cleared after the shared state distribution phase ends.
         /// Removed from on client leave/disconnect.
         std::unordered_map<uint32_t, std::vector<std::pair<ccoip_uuid_t, std::vector<SharedStateHashEntry>>>>
-        shared_state_mask_candidates{};
+                shared_state_mask_candidates{};
 
         /// Cache of the shared state hashes for all entries in the shared state mask for each peer group.
         /// by their key string.
@@ -358,14 +354,14 @@ namespace ccoip {
         /// sharedStateMatches@endcode. Grouped by peer group. Peer group bin is cleared when the shared state
         /// distribution phase ends.
         std::unordered_map<uint32_t, std::unordered_map<ccoip_uuid_t, SharedStateMismatchStatus>>
-        shared_state_statuses{};
+                shared_state_statuses{};
 
         /// Maps the client UUID to the set of shared state keys that have dirty content, meaning
         /// that the hash of the shared state entry does not match the hash in the shared state mask.
         /// Grouped by peer group.
         /// Peer group bin is cleared when the shared state distribution phase ends.
         std::unordered_map<uint32_t, std::unordered_map<ccoip_uuid_t, std::vector<std::string>>>
-        shared_state_dirty_keys{};
+                shared_state_dirty_keys{};
 
         /// Boolean state for each collective communications operation tag in every peer group that indicates if the
         /// operation has been aborted or not. true = aborted false = not aborted Cleared when the collective
@@ -410,10 +406,11 @@ namespace ccoip {
         [[nodiscard]] bool voteEstablishP2PConnections(const ccoip_uuid_t &peer_uuid, bool accept_new_peers);
 
         /// Called when a client votes to check if peers are pending to be accepted.
-        /// All clients must vote to check for pending peers before the master can determine the state of whether peers are pending at the instant of the last vote.
-        /// This vote is independent of all other phases and can happen completely concurrently to any other phase.
-        /// The master does not strictly enforce the lifecycle of this vote as strictly as it does for other votes.
-        /// The reason for this is that peers should be able to obtain this information at any time to inform application branching for optimization purposes.
+        /// All clients must vote to check for pending peers before the master can determine the state of whether peers
+        /// are pending at the instant of the last vote. This vote is independent of all other phases and can happen
+        /// completely concurrently to any other phase. The master does not strictly enforce the lifecycle of this vote
+        /// as strictly as it does for other votes. The reason for this is that peers should be able to obtain this
+        /// information at any time to inform application branching for optimization purposes.
         [[nodiscard]] bool voteQueryWaitingPeersPending(const ccoip_uuid_t &peer_uuid);
 
         /// Called when a client votes to optimize the topology
@@ -562,7 +559,8 @@ namespace ccoip {
         /// group has been aborted.
         [[nodiscard]] bool isCollectiveCommsOperationAborted(uint32_t peer_group, uint64_t tag) const;
 
-        /// @returns true, if the collective communications operation with the specified tag in the specified peer group is in the running state, meaning that the operation was commenced and not yet finished.
+        /// @returns true, if the collective communications operation with the specified tag in the specified peer group
+        /// is in the running state, meaning that the operation was commenced and not yet finished.
         [[nodiscard]] bool isCollectiveOperationRunning(uint32_t peer_group, uint64_t tag) const;
 
         /// @returns SharedStateMismatchStatus::SUCCESSFUL_MATCH if the specified revision is legal as the next
@@ -582,7 +580,7 @@ namespace ccoip {
 
         /// Returns the peers that a particular client should establish p2p connections with
         [[nodiscard]] std::vector<ClientInfo> getPeersForClient(const ccoip_socket_address_t &client_address,
-                                                                const ClientInfo &client_info);
+                                                                const ClientInfo &client_info, bool include_registered);
 
         /// Returns all client socket addresses
         [[nodiscard]] std::vector<ccoip_socket_address_t> getClientSocketAddresses();
@@ -685,7 +683,7 @@ namespace ccoip {
         /// The shared state mask needs to be populated by @code sharedStateMatches@endcode before calling this
         /// function.
         [[nodiscard]] std::optional<ccoip_hash_type_t> getSharedStateEntryHashType(uint32_t peer_group,
-            const std::string &key);
+                                                                                   const std::string &key);
 
         /// Returns the set of shared state keys
         [[nodiscard]] std::vector<std::string> getSharedStateKeys(uint32_t peer_group);
@@ -702,7 +700,8 @@ namespace ccoip {
         /// @param has_improved whether the topology has changed.
         /// Returns true if the topology optimization was successful.
         [[nodiscard]] bool performTopologyOptimization(uint32_t peer_group, bool moonshot,
-                                                       std::vector<ccoip_uuid_t> &new_topology, bool &is_optimal, bool &has_improved);
+                                                       std::vector<ccoip_uuid_t> &new_topology, bool &is_optimal,
+                                                       bool &has_improved);
 
         /// Returns true if the current topology is optimal
         [[nodiscard]] bool isTopologyOptimal(uint32_t peer_group);
@@ -710,19 +709,31 @@ namespace ccoip {
         // TODO: THIS IS SUBJECT TO CHANGE, AS IT ASSERTS THAT THE TOPOLOGY IS A RING ALWAYS
 
         /// Returns the ring topology
-        [[nodiscard]] std::vector<ccoip_uuid_t> getRingTopology(uint32_t peer_group);
+        [[nodiscard]] std::vector<ccoip_uuid_t> getRingTopology(uint32_t peer_group, bool include_registered_peers);
 
         [[nodiscard]] std::vector<uint32_t> getExistingPeerGroups();
 
         /// Sets the current ring reduce topology and the associated state whether it is optimal
         /// NOTE: This function IS thread-safe and may be called from other threads than the main thread
-        [[nodiscard]] bool setRingTopology(uint32_t peer_group, const std::vector<ccoip_uuid_t> &new_topology, bool optimal);
+        [[nodiscard]] bool setRingTopology(uint32_t peer_group, const std::vector<ccoip_uuid_t> &new_topology,
+                                           bool optimal);
 
         /// Returns the global world size, which is the total number of clients in the session
         [[nodiscard]] uint64_t getGlobalWorldSize() const;
 
         /// Returns the local world size for the specified peer group
-        [[nodiscard]] uint64_t getLocalWorldSize(uint32_t peer_group) const;
+        /// @oaram peer_group the peer group to obtain the number of peers of
+        /// @param include_registered whether to count peers that are currently in the REGISTERED state
+        [[nodiscard]] uint64_t getLocalWorldSize(uint32_t peer_group, bool include_registered) const;
+
+        /// Returns the number of distinct peer groups defined in the run. A peer group is considered defined once one
+        /// or more peers that declares a particular value to be its peer group is accepted into the run.
+        /// @param include_registered whether to count peers that are currently in the REGISTERED state
+        [[nodiscard]] uint64_t getNumDistinctPeerGroups(bool include_registered) const;
+
+        /// Returns the largest peer group's local world size. E.i. the number of peers in the largest peer group.
+        /// @param include_registered whether to count peers that are currently in the REGISTERED state
+        uint64_t getLargestPeerGroupWorldSize(bool include_registered);
 
         /// Returns true if there is any peer that has not yet been accepted into the run, aka has pending state.
         [[nodiscard]] bool hasPendingPeers();
@@ -745,6 +756,7 @@ namespace ccoip {
         /// Sets the current ring reduce topology and the associated state whether it is optimal
         /// NOTE: This function IS NOT thread-safe. It is the unsafe version of @code setRingTopology@endcode
         /// and should only be used internally when the mutex is already locked.
-        [[nodiscard]] bool setRingTopologyUnsafe(uint32_t peer_group, const std::vector<ccoip_uuid_t> &new_topology, bool optimal);
+        [[nodiscard]] bool setRingTopologyUnsafe(uint32_t peer_group, const std::vector<ccoip_uuid_t> &new_topology,
+                                                 bool optimal);
     };
 } // namespace ccoip

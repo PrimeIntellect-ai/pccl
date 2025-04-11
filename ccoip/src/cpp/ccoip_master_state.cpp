@@ -907,13 +907,13 @@ bool ccoip::CCoIPMasterState::transitionToTopologyOptimizationPhase() {
 
 std::vector<ccoip::ClientInfo>
 ccoip::CCoIPMasterState::getPeersForClient(const ccoip_socket_address_t &client_address,
-                                           const ClientInfo &client_info) {
+                                           const ClientInfo &client_info, const bool include_registered) {
     const auto client_uuid = client_info.client_uuid;
 
     std::vector<ClientInfo> peers{};
 
     // for now, simply return all clients except the client itself
-    const auto ring_topology = getRingTopology(client_info.peer_group);
+    const auto ring_topology = getRingTopology(client_info.peer_group, include_registered);
     if (ring_topology.empty()) {
         LOG(WARN) << "Ring topology is empty";
         return peers;
@@ -1414,7 +1414,7 @@ bool ccoip::CCoIPMasterState::performTopologyOptimization(
     const bool moonshot,
     std::vector<ccoip_uuid_t> &new_topology, bool &is_optimal, bool &has_improved) {
     if (moonshot) {
-        auto topology = getRingTopology(peer_group);
+        auto topology = getRingTopology(peer_group, false);
 
         if (!topology_is_optimal[peer_group]) {
             bool topology_has_improved = false;
@@ -1429,7 +1429,7 @@ bool ccoip::CCoIPMasterState::performTopologyOptimization(
             has_improved = topology_has_improved;
         }
     } else {
-        auto topology = getRingTopology(peer_group);
+        auto topology = getRingTopology(peer_group, false);
         if (!topology_is_optimal[peer_group]) {
             bool topology_is_optimal = false;
             if (!TopologyOptimizer::OptimizeTopology(bandwidth_store, topology, topology_is_optimal)) {
@@ -1635,9 +1635,10 @@ static bool isTopologyDirty(const std::vector<ccoip_uuid_t> &ring_topology,
     return false;
 }
 
-std::vector<ccoip_uuid_t> ccoip::CCoIPMasterState::getRingTopology(const uint32_t peer_group) {
+std::vector<ccoip_uuid_t> ccoip::CCoIPMasterState::getRingTopology(const uint32_t peer_group,
+                                                                   const bool include_registered_peers) {
     std::unique_lock lock{topology_mutex};
-    if (const uint64_t local_world_size = getLocalWorldSize(peer_group);
+    if (const uint64_t local_world_size = getLocalWorldSize(peer_group, include_registered_peers);
         isTopologyDirty(ring_topologies[peer_group], client_info, local_world_size)) {
         const auto new_topology = buildBasicRingTopology(peer_group);
         if (!setRingTopologyUnsafe(peer_group, new_topology, false)) {
@@ -1667,12 +1668,51 @@ uint64_t ccoip::CCoIPMasterState::getGlobalWorldSize() const {
     return client_info.size();
 }
 
-uint64_t ccoip::CCoIPMasterState::getLocalWorldSize(const uint32_t peer_group) const {
+uint64_t ccoip::CCoIPMasterState::getLocalWorldSize(const uint32_t peer_group, const bool include_registered) const {
     uint64_t world_size = 0;
     for (const auto &[_, info]: client_info) {
+        if (!include_registered) {
+            if (info.connection_phase != PEER_ACCEPTED) {
+                continue;
+            }
+        }
         if (info.peer_group == peer_group) {
             world_size++;
         }
     }
     return world_size;
+}
+
+uint64_t ccoip::CCoIPMasterState::getNumDistinctPeerGroups(const bool include_registered) const {
+    std::unordered_set<uint64_t> distinct_peer_groups{};
+
+    for (const auto &[_, info]: client_info) {
+        if (!include_registered) {
+            if (info.connection_phase != PEER_ACCEPTED) {
+                continue;
+            }
+        }
+        distinct_peer_groups.insert(info.peer_group);
+    }
+
+    return distinct_peer_groups.size();
+}
+
+uint64_t ccoip::CCoIPMasterState::getLargestPeerGroupWorldSize(const bool include_registered) {
+    std::unordered_map<uint32_t, uint64_t> peer_group_sizes{};
+    for (const auto &[_, info]: client_info) {
+        if (!include_registered) {
+            if (info.connection_phase != PEER_ACCEPTED) {
+                continue;
+            }
+        }
+        peer_group_sizes[info.peer_group]++;
+    }
+    uint64_t largest_peer_group_world_size = 0;
+    for (const auto &[_, size]: peer_group_sizes) {
+        if (size > largest_peer_group_world_size) {
+            largest_peer_group_world_size = size;
+        }
+    }
+    return largest_peer_group_world_size;
 }

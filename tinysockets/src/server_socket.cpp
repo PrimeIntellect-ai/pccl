@@ -135,7 +135,7 @@ bool tinysockets::ServerSocket::listen() {
         const int bind_result = uv_tcp_bind(server_socket_state->tcp_server.get(), sock_addr, 0);
         failure = bind_result != 0;
         if (failure) {
-            LOG(ERR) << "uv_tcp_bind failed with error: " << uv_strerror(bind_result) << " (" << bind_result << ")";
+            LOG(INFO) << "uv_tcp_bind failed with error: " << uv_strerror(bind_result) << " (" << bind_result << ")";
             continue;
         }
 
@@ -146,7 +146,7 @@ bool tinysockets::ServerSocket::listen() {
             });
         failure = (listen_result != 0);
         if (failure) {
-            LOG(ERR) << "uv_listen(port=" << listen_address.port << ", backlog=" << SOMAXCONN << ") failed with error: " << uv_strerror(listen_result) << " (" << listen_result << ")";
+            LOG(INFO) << "uv_listen(port=" << listen_address.port << ", backlog=" << SOMAXCONN << ") failed with error: " << uv_strerror(listen_result) << " (" << listen_result << ")";
         }
     } while (bump_port_on_failure && failure);
 

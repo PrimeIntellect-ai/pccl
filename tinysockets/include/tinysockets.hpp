@@ -13,6 +13,8 @@
 #include <atomic>
 #include <condition_variable>
 
+#include <threadpark.h>
+
 #ifdef WIN32
 typedef long long int ssize_t;
 struct sockaddr_in;
@@ -488,7 +490,8 @@ namespace tinysockets {
 
         [[nodiscard]] bool interrupt();
 
-        [[nodiscard]] bool sendBytes(uint64_t tag, const std::span<const std::byte> &data) const;
+        // NOTE: User is responsible for destroying *pDoneHandleOut if pDoneHandleOut is populated
+        [[nodiscard]] bool sendBytes(uint64_t tag, const std::span<const std::byte> &data, bool clone_memory = true, tpark_handle_t **pDoneHandleOut = nullptr) const;
 
         [[nodiscard]] std::optional<ssize_t> receiveBytesInplace(uint64_t tag, const std::span<std::byte> &data) const;
 
