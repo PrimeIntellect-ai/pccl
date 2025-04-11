@@ -62,6 +62,7 @@ private:
 
     template<typename D, typename S>
     FORCE_INLINE static void apply_MinMaxQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count, D min_val, D max_val) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             dst[i] = ccoip::internal::quantize::deQuantizeMinMaxScalar(src[i], min_val, max_val);
         }
@@ -84,6 +85,7 @@ struct Sum {
 private:
     template<typename D, typename S>
     FORCE_INLINE static void apply_NoQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             dst[i] += src[i];
         }
@@ -91,6 +93,7 @@ private:
 
     template<typename D, typename S>
     FORCE_INLINE static void apply_MinMaxQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count, D min_val, D max_val) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             dst[i] += ccoip::internal::quantize::deQuantizeMinMaxScalar(src[i], min_val, max_val);
         }
@@ -113,6 +116,7 @@ struct Prod {
 private:
     template<typename D, typename S>
     FORCE_INLINE static void apply_NoQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             dst[i] *= src[i];
         }
@@ -120,6 +124,7 @@ private:
 
     template<typename D, typename S>
     FORCE_INLINE static void apply_MinMaxQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count, D min_val, D max_val) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             dst[i] *= ccoip::internal::quantize::deQuantizeMinMaxScalar(src[i], min_val, max_val);
         }
@@ -142,6 +147,7 @@ struct Min {
 private:
     template<typename D, typename S, typename UpT>
     FORCE_INLINE static void apply_NoQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             UpT temp = std::min<UpT>(static_cast<UpT>(dst[i]),
                                      static_cast<UpT>(src[i]));
@@ -151,6 +157,7 @@ private:
 
     template<typename D, typename S, typename UpT>
     FORCE_INLINE static void apply_MinMaxQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count, D min_val, D max_val) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             UpT temp = std::min<UpT>(static_cast<UpT>(dst[i]),
                                      static_cast<UpT>(ccoip::internal::quantize::deQuantizeMinMaxScalar(src[i], min_val, max_val)));
@@ -176,6 +183,7 @@ struct Max {
 private:
     template<typename D, typename S, typename UpT>
     FORCE_INLINE static void apply_NoQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             UpT temp = std::max<UpT>(static_cast<UpT>(dst[i]),
                                      static_cast<UpT>(src[i]));
@@ -185,6 +193,7 @@ private:
 
     template<typename D, typename S, typename UpT>
     FORCE_INLINE static void apply_MinMaxQuant(D *RESTRICT dst, const S *RESTRICT src, const size_t count, D min_val, D max_val) {
+        #pragma omp simd
         for (size_t i = 0; i < count; ++i) {
             UpT temp = std::max<UpT>(static_cast<UpT>(dst[i]),
                                      static_cast<UpT>(ccoip::internal::quantize::deQuantizeMinMaxScalar(src[i], min_val, max_val)));
@@ -419,6 +428,7 @@ void ccoip::internal::reduce::performReduction(const std::span<std::byte> &dst,
 template<typename T>
 FORCE_INLINE static void performAvgFinalization(T *dst, const size_t count, const size_t world_size) {
     const T value = static_cast<T>(world_size);
+    #pragma omp simd
     for (size_t i = 0; i < count; ++i) {
         dst[i] = dst[i] / value;
     }

@@ -39,24 +39,66 @@ static bool configure_socket_fd(const int socket_fd) {
 
 struct ReceiveQueueEntry {
     uint64_t tag{};
-    std::unique_ptr<std::byte[]> data;
+    uint8_t *data;
+    size_t data_size{};
     std::span<std::byte> data_span{};
 };
 
 struct SendQueueEntry {
     uint64_t tag{};
-    std::unique_ptr<uint8_t[]> data;
+    uint8_t *data{};
     size_t size_bytes{};
 };
 
 #define TXRX_QUEUE_DEPTH 1024
+#define POOLED_ALLOCATOR_MAX_ENTRIES 128
 
 namespace tinysockets {
+    // Note: this allocator can be this stupid because our sizes are
+    // deterministic and are also the same on both RX and TX side.
+    // Also note: This allocator is crucial for high all reduce performance.
+    class PooledAllocator {
+        std::vector<std::pair<void *, size_t>> pool;
+        std::mutex mutex;
+
+    public:
+        void *allocate(const size_t size) {
+            std::unique_lock lock(mutex);
+            for (auto it = pool.begin(); it != pool.end(); ++it) {
+                if (it->second >= size) {
+                    void *ptr = it->first;
+                    pool.erase(it);
+                    return ptr;
+                }
+            }
+            return malloc(size);
+        }
+
+        void release(const void *ptr, size_t size) {
+            // we trust the user to set size correctly; there is only one intended call-site anyways
+            std::unique_lock lock(mutex);
+            if (pool.size() >= POOLED_ALLOCATOR_MAX_ENTRIES) {
+                free(const_cast<void *>(ptr));
+            } else {
+                pool.emplace_back(const_cast<void *>(ptr), size);
+            }
+        }
+
+        ~PooledAllocator() {
+            for (auto &[ptr, size]: pool) {
+                free(ptr);
+            }
+            pool.clear();
+        }
+    };
+
     struct MultiplexedIOSocketInternalState {
         MPSCQueue<SendQueueEntry> send_queue;
 
         std::shared_mutex receive_queues_mutex{};
         std::unordered_map<uint64_t, std::unique_ptr<::rigtorp::SPSCQueue<ReceiveQueueEntry>>> receive_queues{};
+
+        PooledAllocator allocator{};
 
         tpark_handle_t *tx_park_handle = nullptr;
 
@@ -70,7 +112,6 @@ namespace tinysockets {
         }
     };
 } // namespace tinysockets
-
 
 tinysockets::MultiplexedIOSocket::MultiplexedIOSocket(const ccoip_socket_address_t &address,
                                                       const ConnectionModeFlags flags) : socket_fd(0),
@@ -200,8 +241,8 @@ bool tinysockets::MultiplexedIOSocket::run() {
                         LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
                     }
                 }
-                auto data_ptr = std::unique_ptr<std::byte[]>(new std::byte[length]);
-                std::span data{reinterpret_cast<uint8_t *>(data_ptr.get()), length};
+                auto *data_ptr = static_cast<uint8_t*>(internal_state->allocator.allocate(length));
+                std::span data{data_ptr, length};
                 if (!receivePacketData(data)) {
                     if (running.load(std::memory_order_acquire)) {
                         LOG(ERR) << "Failed to receive packet data for packet with length " << length << "; error: "
@@ -227,15 +268,19 @@ bool tinysockets::MultiplexedIOSocket::run() {
                 {
                     std::shared_lock guard{internal_state->receive_queues_mutex};
                     const auto &queue = internal_state->receive_queues.at(tag);
-                    const auto data_raw_ptr = data_ptr.get();
                     queue->push(ReceiveQueueEntry{
                         .tag = tag,
 
                         // we just pass this for the sake of ownership
-                        .data = std::move(data_ptr),
+                        .data = data_ptr,
+
+                        // we have to take note of the size actually allocated by the data_ptr for the allocator,
+                        // because that's what we allocated.
+                        // We don't expose the tag in the data span, but we need to know how much we allocated
+                        .data_size = length,
 
                         // don't include the tag in the data span
-                        .data_span = std::span(data_raw_ptr + sizeof(uint64_t),
+                        .data_span = std::span(reinterpret_cast<std::byte *>(data_ptr + sizeof(uint64_t)),
                                                data.size_bytes() - sizeof(uint64_t))
                     });
                 }
@@ -287,7 +332,7 @@ bool tinysockets::MultiplexedIOSocket::run() {
                 size_t n_sent = 0;
                 do {
                     const ssize_t i =
-                            sendvp(socket_fd, entry->data.get() + n_sent, entry->size_bytes - n_sent, MSG_NOSIGNAL);
+                            sendvp(socket_fd, entry->data + n_sent, entry->size_bytes - n_sent, MSG_NOSIGNAL);
                     if (i == 0) {
                         LOG(ERR) << "Connection was closed while sending packet data for packet with tag " << entry->tag
                                 << "; exiting send loop...";
@@ -301,7 +346,8 @@ bool tinysockets::MultiplexedIOSocket::run() {
                         // if we are sending too fast and are exceeding the kernel's send buffer, we need to sleep a bit.
                         // We will re-try sending the same data in the next iteration
                         if (errno == ENOBUFS) {
-                            LOG(DEBUG) << "Kernel send buffer is full; Tried to send too much data without opposite peer catching up. Backing off...";
+                            LOG(DEBUG) <<
+                                    "Kernel send buffer is full; Tried to send too much data without opposite peer catching up. Backing off...";
                             std::this_thread::sleep_for(std::chrono::milliseconds(100));
                             continue;
                         }
@@ -312,6 +358,7 @@ bool tinysockets::MultiplexedIOSocket::run() {
                     }
                     n_sent += i;
                 } while (n_sent < entry->size_bytes);
+                internal_state->allocator.release(entry->data, entry->size_bytes);
                 delete entry;
             }
             LOG(INFO) << "MultiplexedIOSocket::run() interrupted, exiting send loop...";
@@ -349,9 +396,9 @@ bool tinysockets::MultiplexedIOSocket::sendBytes(const uint64_t tag, const std::
     }
     auto *entry = new SendQueueEntry();
     entry->tag = tag;
-    entry->data = std::unique_ptr<uint8_t[]>(new uint8_t[data.size()]);
+    entry->data = static_cast<uint8_t *>(internal_state->allocator.allocate(data.size_bytes()));
     entry->size_bytes = data.size_bytes();
-    std::memcpy(entry->data.get(), data.data(), data.size()); {
+    std::memcpy(entry->data, data.data(), data.size()); {
         if (!internal_state->send_queue.enqueue(entry, true)) {
             LOG(ERR) << "MultiplexedIOSocket::sendBytes() failed to enqueue data; MPSC queue is full";
             return false;
@@ -376,7 +423,7 @@ std::optional<ssize_t> tinysockets::MultiplexedIOSocket::receiveBytesInplace(con
         if (entry_ptr == nullptr) {
             return 0;
         }
-        const auto entry = std::move(*entry_ptr);
+        const auto entry = *entry_ptr;
         queue->pop();
 
         if (entry.tag != tag) {
@@ -390,6 +437,9 @@ std::optional<ssize_t> tinysockets::MultiplexedIOSocket::receiveBytesInplace(con
             continue;
         }
         std::memcpy(data.data(), entry.data_span.data(), entry.data_span.size_bytes());
+
+        internal_state->allocator.release(entry.data, entry.data_size);
+
         return static_cast<ssize_t>(entry.data_span.size_bytes());
     }
 }
@@ -418,7 +468,7 @@ std::optional<std::unique_ptr<std::byte[]>> tinysockets::MultiplexedIOSocket::re
             }
             continue;
         }
-        auto entry = std::move(*entry_ptr);
+        auto entry = *entry_ptr;
         queue->pop();
 
         if (entry.tag != tag) {
@@ -426,7 +476,12 @@ std::optional<std::unique_ptr<std::byte[]>> tinysockets::MultiplexedIOSocket::re
             continue;
         }
         data = std::span(entry.data_span.data(), entry.data_span.size_bytes());
-        return std::move(entry.data);
+
+        auto data_ptr = std::unique_ptr<std::byte[]>(new std::byte[entry.data_span.size_bytes()]);
+        std::memcpy(data_ptr.get(), entry.data_span.data(), entry.data_span.size_bytes());
+        internal_state->allocator.release(entry.data, entry.data_size);
+
+        return std::move(data_ptr);
     }
 }
 
