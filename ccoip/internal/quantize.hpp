@@ -128,41 +128,55 @@ namespace ccoip::internal::quantize {
 
         template <typename T> requires std::is_integral_v<T>
         [[nodiscard]] T zeroPointAs() const {
+            T value = 0;
             switch (zero_point_type) {
                 case ccoipInt8: {
                     assert(zero_point.size() == sizeof(std::int8_t));
-                    return static_cast<T>(*reinterpret_cast<const std::int8_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::int8_t *>(zero_point.data()));
+                    break;
                 }
                 case ccoipUint8: {
                     assert(zero_point.size() == sizeof(std::uint8_t));
-                    return static_cast<T>(*reinterpret_cast<const std::uint8_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::uint8_t *>(zero_point.data()));
+                    break;
                 }
                 case ccoipInt16: {
                     assert(zero_point.size() == sizeof(std::int16_t));
-                    return static_cast<T>(*reinterpret_cast<const std::int16_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::int16_t *>(zero_point.data()));
+                    break;
                 }
                 case ccoipUint16: {
                     assert(zero_point.size() == sizeof(std::uint16_t));
-                    return static_cast<T>(*reinterpret_cast<const std::uint16_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::uint16_t *>(zero_point.data()));
+                    break;
                 }
                 case ccoipInt32: {
                     assert(zero_point.size() == sizeof(std::int32_t));
-                    return static_cast<T>(*reinterpret_cast<const std::int32_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::int32_t *>(zero_point.data()));
+                    break;
                 }
                 case ccoipUint32: {
                     assert(zero_point.size() == sizeof(std::uint32_t));
-                    return static_cast<T>(*reinterpret_cast<const std::uint32_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::uint32_t *>(zero_point.data()));
+                    break;
                 }
                 case ccoipInt64: {
                     assert(zero_point.size() == sizeof(std::int64_t));
-                    return static_cast<T>(*reinterpret_cast<const std::int64_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::int64_t *>(zero_point.data()));
+                    break;
                 }
                 case ccoipUint64: {
                     assert(zero_point.size() == sizeof(std::uint64_t));
-                    return static_cast<T>(*reinterpret_cast<const std::uint64_t *>(zero_point.data()));
+                    value = static_cast<T>(*reinterpret_cast<const std::uint64_t *>(zero_point.data()));
+                    break;
                 }
                 default: LOG(BUG) << "Unsupported zero point type: " << zero_point_type;std::abort();
             }
+            if constexpr (std::is_integral_v<T>) {
+                // if is integer, convert from network byte order
+                value = tinysockets::network_order_utils::network_to_host(value);
+            }
+            return value;
         }
 
     };

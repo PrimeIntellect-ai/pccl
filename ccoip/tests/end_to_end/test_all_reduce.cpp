@@ -363,7 +363,7 @@ TYPED_TEST(QuantizeTypedAllReduceTest, TestSumQuantizedWorldSize2) {
                                    1024,
                                    ccoipType,
                                    ccoip::ccoipUint8,
-                                   ccoip::ccoipQuantizationMinMax,
+                                   ccoip::ccoipQuantizationZeroPointScale,
                                    ccoip::ccoipOpSum,
                                    1));
         ASSERT_TRUE(client1.joinAsyncReduce(1));
@@ -388,7 +388,7 @@ TYPED_TEST(QuantizeTypedAllReduceTest, TestSumQuantizedWorldSize2) {
                                    1024,
                                    ccoipType,
                                    ccoip::ccoipUint8,
-                                   ccoip::ccoipQuantizationMinMax,
+                                   ccoip::ccoipQuantizationZeroPointScale,
                                    ccoip::ccoipOpSum,
                                    1));
         ASSERT_TRUE(client2.joinAsyncReduce(1));

@@ -404,13 +404,16 @@ void performReduction(const std::span<std::byte> &dst,
             break;
     }
 
+    auto scale = meta_data.scaleAs<float>();
+    auto zp = meta_data.zeroPointAs<std::int64_t>();
+
     ccoip::internal::get_quant_ctx().dequantize(
         src,
         ccoip::internal::get_piquant_dtype(src_type),
         dst,
         ccoip::internal::get_piquant_dtype(dst_type),
-        meta_data.scaleAs<float>(),
-        meta_data.zeroPointAs<std::int32_t>(),
+        scale,
+        zp,
         reduce_op
     );
 }
