@@ -18,14 +18,26 @@ ccoip::internal::quantize::DeQuantizationMetaData ccoip::internal::quantize::per
             return performMinMaxQuantization(dst_span, src_span, quantized_type, data_type);
         }
         case ccoipQuantizationZeroPointScale: {
-            if (data_type != ccoipFloat) { // TODO
-                LOG(BUG) << "ZeroPointScale quantization is only supported for float data type.";
-                return {};
+            std::pair<float, std::int64_t> quant_params {};
+            switch (data_type) {
+                case ccoipFloat:
+                    quant_params = get_quant_ctx().compute_quant_config_from_data(
+                        std::span{reinterpret_cast<const float *>(src_span.data()), src_span.size_bytes()/sizeof(float)},
+                        get_piquant_dtype(quantized_type)
+                    );
+                break;
+                case ccoipDouble:
+                    quant_params = get_quant_ctx().compute_quant_config_from_data(
+                        std::span{reinterpret_cast<const double *>(src_span.data()), src_span.size_bytes()/sizeof(double)},
+                        get_piquant_dtype(quantized_type)
+                    );
+                break;
+                default: {
+                    LOG(BUG) << "Unsupported data type for quantization: " << data_type;
+                    return {};
+                }
             }
-            auto [scale, zp] = get_quant_ctx().compute_quant_config_from_data(
-                std::span<const float> {reinterpret_cast<const float *>(src_span.data()), src_span.size_bytes()/sizeof(float)},
-                get_piquant_dtype(quantized_type)
-            );
+            auto [scale, zp] = quant_params;
             get_quant_ctx().quantize(
                 src_span,
                 get_piquant_dtype(data_type),
@@ -33,7 +45,7 @@ ccoip::internal::quantize::DeQuantizationMetaData ccoip::internal::quantize::per
                 get_piquant_dtype(quantized_type),
                 scale,
                 zp,
-                piquant::round_mode::nearest // TODO
+                piquant::round_mode::nearest
             );
             return DeQuantizationMetaData::MakeZeroPointScale(zp, scale);
         }
