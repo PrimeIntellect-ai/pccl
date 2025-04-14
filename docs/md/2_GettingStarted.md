@@ -310,7 +310,7 @@ You can launch it in one of two ways:
 
 #### Via the PCCL API:
 
-```c++
+```cpp
 #include <pccl.h>
 #include <pccl.h>
 
@@ -365,7 +365,7 @@ Each worker or training process is a *peer*. In C/C++:
 2. Create a communicator using the master's address and a chosen "peer group" ID.
 3. Connect to the master and wait until the master's state machine has accepted/acknowledged the peer.
 
-```c++
+```cpp
 #include <pccl.h>
 #include <iostream>
 
@@ -439,7 +439,7 @@ In many distributed training loops, you'll repeat a sequence of:
 
 #### Obtain the world size via `pcclGetAttribute`
 
-```c++
+```cpp
 int world_size{};
 PCCL_CHECK(pcclGetAttribute(communicator, PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE, &world_size));
 ```
@@ -468,7 +468,7 @@ PCCL_CHECK(pcclGetAttribute(communicator, PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE, &wor
 
 #### The recommended pattern for a loop iteration is thus as follows:
 
-```c++
+```cpp
 int world_size{};
 PCCL_CHECK(pcclGetAttribute(communicator, PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE, &world_size));
 
@@ -509,7 +509,7 @@ harder to ensure that peers are in unanimous agreement about the current state o
 ### Shared state synchronization
 
 If your application intents to take advantage of PCCL's shared state synchronization scheme to e.g. keep parameters in sync,  you can use the following pattern:
-```c++
+```cpp
 float myModelWeights[4096] = {/* ... */};
 
 pcclTensorInfo_t tinfo{
@@ -562,7 +562,7 @@ should result in bit-identical independent advancement of model parameters, elim
 If you have at least 2 peers, you can do collective communications operations, such as an All-Reduce.
 For example:
 
-```c++
+```cpp
 float local_data[1024] = {/* ... */};
 float result[1024]{};
 
@@ -601,7 +601,7 @@ which PCCL will have to allocate anyway yourself.
 The following is a simple example of a complete program that uses PCCL to perform an All-Reduce operation:
 
 ### hello_world.cpp (Peer Side)
-```c++
+```cpp
 #include <pccl.h>
 #include <iostream>
 #include <thread>    // for sleep_for

@@ -6,7 +6,7 @@ This section provides concrete usage examples for various scenarios—CPU-only c
 
 The following is a simple example of a complete program that uses PCCL to perform an All-Reduce operation:
 
-```c++
+```cpp
 #include <pccl.h>
 #include <iostream>
 #include <thread>

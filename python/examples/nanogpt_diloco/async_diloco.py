@@ -410,7 +410,7 @@ def main():
 
         # 1) Possibly update topology / wait for enough peers
         with profiler.session("pccl::update_topology"):
-            if local_iter_num > 1 or world_size == 1:
+            if local_iter_num > 1:
                 while True:
                     try:
                         if communicator.are_peers_pending():

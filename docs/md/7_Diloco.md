@@ -79,6 +79,7 @@ for outer_iter in range(MAX_OUTER_ITERS):
 ```
 
 A full example implementing synchronous DiLoCo is available here: https://github.com/PrimeIntellect-ai/pccl/blob/main/python/examples/nanogpt_diloco/sync_diloco.py
+
 A full example implementing synchronous DiLoCo combined with FSDP (Fully Sharded Data Parallel) is available here: https://github.com/PrimeIntellect-ai/pccl/blob/main/python/examples/nanogpt_diloco/sync_diloco_fsdp.py
 
 ## Streaming DiLoCo

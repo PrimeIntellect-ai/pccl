@@ -4,7 +4,7 @@ This section offers a behind-the-scenes look at how PCCL is implemented. While m
 - Debugging issues in cross-platform socket code
 - Understanding how concurrency is managed
 
-## TinySockets & Polling
+## TinySockets
 PCCL relies on standard TCP sockets for:
 - *Master* connections (long-lived to the orchestrator)
 - *Peer-to-Peer* ring connections (one or two per ring neighbor)
@@ -14,10 +14,16 @@ PCCL relies on standard TCP sockets for:
 ### Queued Socket Mechanism
 For the master connection—and potentially any socket that might carry messages for multiple “logical” operations—PCCL uses a queued socket approach. That is, we maintain an internal queue of incoming packets, and let each part of the library read only the packets intended for it by consuming only packets that match a particular predicate. This helps avoid concurrency issues where multiple threads might accidentally consume each other’s data.
 
+### Dedicated RX/TX Threads
+PCCL uses dedicated RX/TX threads for sending and receiving concurrently.
+Threads add read or write requests to a queue for a particular tag, and data will be sent or received on that threads behalf.
+The RX thread will read from the socket and dispatch the data to the correct queue given the received tag.
+The TX thread will send data from the queue to the socket while prepending the tag for distinction.
+Waking up the TX thread is done via [threadpark](https://github.com/PrimeIntellect-ai/threadpark/tree/main), a custom-built lightweight thread parking library that utilizing futex-like apis on all major operating systems to facilitate efficient wakes.
 
 ## Firewalls & Ports
 - By default, the master listens on port `48148`
-- Each peer tries to bind to a small range ([48149..48151]) for p2p, shared-state distribution, and bandwidth test sockets.
+- Each peer tries to bind to a small range ([`48149`..`48151`]) for p2p, shared-state distribution, and bandwidth test sockets.
   However, these ports are not defacto static as is the case with most network protocols. Rather, these ports are “bump allocated“ where initially the implementation tries to bind to the target port (e.g. `48151` for the benchmark socket, or `48149` for the shared state server), but if this fails, the next higher port is tried until a free port is found. This ensures multiple peers can run on the same machine without port conflicts. Peers will "find" each other by reporting their ports to the master, which will inturn share this information with other peers.
 
 - `Important`: For wide-area or internet usage, you must open these ports in your firewall & forward them to your computer when behind NAT. When only hosting one peer per IP address, only opening port `48149`, `48150`, `48151` is required.
