@@ -220,14 +220,20 @@ bool tinysockets::MultiplexedIOSocket::run() {
                 // Keep reading until we either receive all 16 bytes,
                 // or encounter an error/remote close/interrupt.
                 do {
-                    const ssize_t i = recvvp(socket_fd, reinterpret_cast<uint8_t *>(preamble) + n_received, PREAMBLE_SIZE - n_received, 0);
+                    const ssize_t i = recvvp(socket_fd, reinterpret_cast<uint8_t *>(preamble) + n_received,
+                                             PREAMBLE_SIZE - n_received, 0);
                     const bool still_running = running.load(std::memory_order_acquire);
 
-                    // If error, remote closure, or we’re no longer “running,” bail out.
+                    // If error, remote closure, or we're no longer "running," bail out.
                     if (i == -1 || i == 0 || !still_running) {
                         if (still_running) {
-                            LOG(ERR) << "[MultiplexedIOSocket] Failed to receive 16-byte preamble: "
-                                     << std::strerror(errno);
+                            LOG(ERR) << "[MultiplexedIOSocket] Failed to receive 16-byte preamble; error: "
+                                     << std::strerror(errno) << "; exiting receive loop...";
+                            if (!interrupt()) [[unlikely]] {
+                                LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
+                            }
+                        } else {
+                            LOG(INFO) << "MultiplexedIOSocket::run() interrupted, exiting receive loop...";
                         }
                         return;
                     }
@@ -330,10 +336,15 @@ bool tinysockets::MultiplexedIOSocket::run() {
                                 entry->size_bytes + sizeof(uint64_t) // size including the subsequent tag
                                 ),
                         network_order_utils::host_to_network(entry->tag)};
-                if (sendvp(socket_fd, preamble, sizeof(preamble), MSG_NOSIGNAL) == -1) {
-                    LOG(ERR) << "Failed to send preamble for packet with tag " << entry->tag;
+                const ssize_t i = sendvp(socket_fd, preamble, sizeof(preamble), MSG_NOSIGNAL);
+                if (i == 0) {
+                    LOG(ERR) << "Connection was closed while sending preamble for packet with tag " << entry->tag
+                             << "; exiting send loop...";
+                    if (!interrupt()) {
+                        LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
+                    }
                     delete entry;
-                    continue;
+                    break;
                 }
                 size_t n_sent = 0;
                 do {
@@ -359,6 +370,9 @@ bool tinysockets::MultiplexedIOSocket::run() {
                         std::string error_message = std::strerror(errno);
                         LOG(ERR) << "Failed to send packet data for packet with tag " << entry->tag
                                  << " with error: " << error_message;
+                        if (!interrupt()) {
+                            LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
+                        }
                         break;
                     }
                     n_sent += i;

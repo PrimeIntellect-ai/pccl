@@ -115,7 +115,7 @@ DeQuantizationMetaData ccoip::internal::quantize::performMinMaxQuantization(
         const std::span<std::byte> &dst_span,
         const std::span<const std::byte> &src_bytes,
         const ccoip_data_type_t quantized_type, const ccoip_data_type_t data_type) {
-    static std::unordered_map<DtypeVariant, quant_fn_t> minmax_map = {
+    std::unordered_map<DtypeVariant, quant_fn_t> minmax_map = {
             // uint8 input with all floating point accumulation types (with fused de-quantization, hence only floating point dst types)
             {{ccoipFloat, ccoipUint8}, make_quantfn(&minMaxQuant<uint8_t, float>)},
             {{ccoipDouble, ccoipUint8}, make_quantfn(&minMaxQuant<uint8_t, double>)},
@@ -167,7 +167,7 @@ void ccoip::internal::quantize::performMinMaxQuantizationAndDequantization(const
                                                                            const std::span<const std::byte> &src_bytes,
                                                                            const ccoip_data_type_t quantized_type,
                                                                            const ccoip_data_type_t data_type) {
-    static std::unordered_map<DtypeVariant, fused_quant_and_dequant_fn_t> minmax_map = {
+    std::unordered_map<DtypeVariant, fused_quant_and_dequant_fn_t> minmax_map = {
             // uint8 input with all floating point accumulation types (with fused de-quantization, hence only floating point dst types)
             {{ccoipFloat, ccoipUint8},
              make_fused_quant_and_dequant_fn<uint8_t>(&minMaxQuantAndDequant<uint8_t, float>)},

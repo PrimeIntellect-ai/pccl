@@ -149,6 +149,10 @@ def main():
     n_performed_steps = 0
     it = 0
     world_size: int = communicator.get_attribute(Attribute.GLOBAL_WORLD_SIZE)
+
+    # Create fake gradients
+    gradients = [torch.randn(128, 128, dtype=torch.float32) for _ in range(10)]
+
     while True:
         # do step
         topology_updated = False
@@ -209,10 +213,11 @@ def main():
             assert info is not None
             print(f"(RANK={RANK}, it={it}) tx_bytes={info.tx_bytes}, rx_bytes={info.rx_bytes}")
 
-        # Create fake gradients
-        gradients = [torch.randn(128, 128, dtype=torch.float32) for _ in range(10)]
+        # Re-init gradients randomly
+        for i in range(len(gradients)):
+            torch.randn(out=gradients[i], size=gradients[i].shape)
 
-        def reduce_thread_fn():
+        def reduce_thread_fn_2():
             descriptors = []
             tag = 0
             for grad in gradients:
@@ -228,20 +233,25 @@ def main():
                             distribution_hint=DistributionHint.NORMAL
                         ),
                         quantization_options=QuantizationOptions(
-                            quantized_datatype=DataType.UINT8,
-                            algorithm=QuantizationAlgorithm.MIN_MAX
+                            quantized_datatype=DataType.FLOAT,
+                            algorithm=QuantizationAlgorithm.NONE
                         )
                     )
                 )
                 descriptors.append(reduce_op_descriptor)
                 tag += 1
 
-            communicator.all_reduce_multiple_with_retry(descriptors, max_in_flight=8)
+            reduce_info = communicator.all_reduce_multiple_with_retry(descriptors, max_in_flight=8)
+            print(
+                f"(RANK={RANK}) Reduce completed RX: {reduce_info.rx_bytes}, TX: {reduce_info.tx_bytes}; world_size: {world_size}")
+
+        def reduce_thread_fn():
+            all_reduce_multiple_with_retry(communicator, gradients, ReduceOp.SUM, max_in_flight=8)
 
         if reduce_thread is not None:
             reduce_thread.join()
 
-        reduce_thread = threading.Thread(target=reduce_thread_fn, name="ReduceThread")
+        reduce_thread = threading.Thread(target=reduce_thread_fn_2, name="ReduceThread")
         reduce_thread.start()
 
         n_performed_steps += 1

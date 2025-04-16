@@ -361,6 +361,10 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
     // launch as many async all reduce operations up-front
     // as possible, up to the max_in_flight limit
     for (size_t i = 0; i < count; ++i) {
+        if (in_flight >= static_cast<uint32_t>(max_in_flight)) {
+            break;
+        }
+
         const pcclReduceOpDescriptor_t &op_descriptor = descriptors[i];
 
         pcclAsyncReduceOp_t handle{};
@@ -374,10 +378,6 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
         reduce_handles[i] = handle;
 
         in_flight++;
-
-        if (in_flight >= static_cast<uint32_t>(max_in_flight)) {
-            break;
-        }
     }
 
     // stores all indices of completed reduce operations

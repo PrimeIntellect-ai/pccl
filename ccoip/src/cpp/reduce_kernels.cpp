@@ -267,7 +267,7 @@ FORCE_INLINE void doReduceDataType(const std::span<std::byte> &dst,
     const size_t num_elements = dst.size_bytes() / dst_element_size;
     assert(num_elements == src.size_bytes() / src_element_size);
 
-    static std::unordered_map<DtypeQuantVariant, reduce_fn_t> reduce_functions = {
+    std::unordered_map<DtypeQuantVariant, reduce_fn_t> reduce_functions = {
         // int8 input with all signed equal or higher bit accumulation types [ int8_t <= d <= int64_t ] (no quantization)
         // signed input type means unsigned accumulation type is not allowed.
         {{ccoip::ccoipInt8, ccoip::ccoipInt8, ccoip::ccoipQuantizationNone}, make_redfn(&Op::template apply<int8_t, int8_t, ccoip::ccoipQuantizationNone>)},

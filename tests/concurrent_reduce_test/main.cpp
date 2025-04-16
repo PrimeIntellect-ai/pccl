@@ -76,36 +76,31 @@ int main() {
             continue;
         }
 
-        std::cout << "Starting all reduces...";
-        // NOTE: THIS IS NOT A SAFE PATTERN FOR RECOVERY, WE JUST DO THIS FOR EASY OF TESTING
-        // WHETHER ALL REDUCES CAN RUN CONCURRENTLY AT ALL
-        std::vector<pcclAsyncReduceOp_t> reduce_descriptors{};
+        std::cout << "Start all reduce" << std::endl;
+
+        std::vector<pcclReduceOpDescriptor_t> descriptors{};
         for (size_t j = 0; j < num_weights; j++) {
-            pcclReduceDescriptor_t desc{
-                .count = n_elements,
-                .op = pcclSum,
-                .tag = j,
-                .src_descriptor = {.datatype = pcclFloat, .distribution_hint = PCCL_DISTRIBUTION_HINT_NONE},
-                // .quantization_options = {.quantized_datatype = pcclUint8, .algorithm = pcclQuantMinMax},
-                .quantization_options = {.quantized_datatype = pcclFloat, .algorithm = pcclQuantNone},
+            pcclReduceOpDescriptor_t descriptor{
+                .sendbuf = all_gradients[j],
+                .recvbuf = all_weights[j],
+                .descriptor = pcclReduceDescriptor_t {
+                    .count = num_weights,
+                    .tag = j,
+                    .src_descriptor = pcclReduceOperandDescriptor_t {
+                        .datatype = pcclFloat,
+                        .distribution_hint = PCCL_DISTRIBUTION_HINT_NONE
+                    }
+                }
             };
-            float *weights = all_weights[j];
-            float *gradients = all_gradients[j];
-
-            pcclAsyncReduceOp_t async_op{};
-            pcclAllReduceAsync(weights, gradients, &desc, communicator, &async_op);
-            reduce_descriptors.push_back(async_op);
+            descriptors.push_back(descriptor);
         }
 
-        for (const auto &async_op : reduce_descriptors) {
-            pcclReduceInfo_t reduce_info{};
-            PCCL_CHECK(pcclAwaitAsyncReduce(&async_op, &reduce_info));
-        }
-
+        pcclReduceInfo_t reduce_info{};
+        pcclAllReduceMultipleWithRetry(descriptors.data(), num_weights, communicator, &reduce_info, 8);
 
         pcclGetAttribute(communicator, PCCL_ATTRIBUTE_GLOBAL_WORLD_SIZE, &world_size);
 
-        std::cout << "All reduces finished";
+        std::cout << "All reduces finished" << std::endl;
     }
 
     PCCL_CHECK(pcclDestroyCommunicator(communicator));
