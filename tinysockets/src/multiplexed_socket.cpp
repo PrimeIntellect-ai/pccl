@@ -202,7 +202,7 @@ std::optional<size_t> tinysockets::MultiplexedIOSocket::receivePacketLength() co
         }
         n_received += i;
     } while (n_received < sizeof(length));
-    return network_order_utils::host_to_network(length);
+    return network_order_utils::network_to_host(length);
 }
 
 bool tinysockets::MultiplexedIOSocket::run() {
@@ -245,6 +245,8 @@ bool tinysockets::MultiplexedIOSocket::run() {
 
                 length = network_order_utils::network_to_host(length);
                 tag = network_order_utils::network_to_host(tag);
+
+                LOG(TRACE) << "MultiplexedIOSocket: Received packet with length " << length << " and tag " << tag;
 
                 // safeguard against large packets
                 if (length > (1024 * 1024 * 1024)) {
@@ -346,6 +348,8 @@ bool tinysockets::MultiplexedIOSocket::run() {
                     delete entry;
                     break;
                 }
+
+                LOG(TRACE) << "MultiplexedIOSocket: Sent packet with length " << entry->size_bytes << " and tag " << entry->tag;
                 size_t n_sent = 0;
                 do {
                     const ssize_t i = sendvp(socket_fd, entry->data + n_sent, entry->size_bytes - n_sent, MSG_NOSIGNAL);
@@ -359,9 +363,8 @@ bool tinysockets::MultiplexedIOSocket::run() {
                     }
 
                     if (i == -1) {
-                        // if we are sending too fast and are exceeding the kernel's send buffer, we need to sleep a
-                        // bit. We will re-try sending the same data in the next iteration
                         if (errno == ENOBUFS) {
+                            // this is most certainly a socket impl bug and if this ever happens, we are screwed
                             LOG(DEBUG) << "Kernel send buffer is full; Tried to send too much data without opposite "
                                           "peer catching up. Backing off...";
                             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -479,6 +482,8 @@ std::optional<ssize_t> tinysockets::MultiplexedIOSocket::receiveBytesInplace(con
 
         internal_state->rx_allocator.release(entry.data, entry.data_size);
 
+        LOG(TRACE) << "receiveBytesInplace() received " << entry.data_size << " bytes of data with tag " << entry.tag;
+
         return static_cast<ssize_t>(entry.data_span.size_bytes());
     }
 }
@@ -514,12 +519,14 @@ std::optional<std::unique_ptr<std::byte[]>> tinysockets::MultiplexedIOSocket::re
             LOG(BUG) << "Obtained packet from SPMCQueue with unexpected tag " << entry.tag << "; expected " << tag;
             continue;
         }
-        data = std::span(entry.data_span.data(), entry.data_span.size_bytes());
 
         auto data_ptr = std::unique_ptr<std::byte[]>(new std::byte[entry.data_span.size_bytes()]);
         std::memcpy(data_ptr.get(), entry.data_span.data(), entry.data_span.size_bytes());
         internal_state->rx_allocator.release(entry.data, entry.data_size);
 
+        data = std::span(data_ptr.get(), entry.data_span.size_bytes());
+
+        LOG(TRACE) << "receiveBytes() received " << entry.data_size << " bytes of data with tag " << entry.tag;
         return std::move(data_ptr);
     }
 }

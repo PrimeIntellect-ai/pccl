@@ -6,6 +6,8 @@
 
 const char *ToString(const LogLevel level) {
     switch (level) {
+        case TRACE:
+            return "TRACE";
         case DEBUG:
             return "DEBUG";
         case INFO:
@@ -28,6 +30,9 @@ static LogLevel readReportingLevel() {
 
     if (logLevel == nullptr) {
         return ERR;
+    }
+    if (strcmp(logLevel, "TRACE") == 0) {
+        return TRACE;
     }
     if (strcmp(logLevel, "DEBUG") == 0) {
         return DEBUG;

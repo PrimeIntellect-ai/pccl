@@ -1217,7 +1217,7 @@ bool ccoip::CCoIPClientHandler::allReduceAsync(const void *sendbuff, void *recvb
                                                   auto [success, abort_packet_received] = reduce_fun();
                                                   if (!success) {
                                                       LOG(WARN) <<
-                                                              "An IO error occurred during the all reduce; Aborting collective communications operation...";
+                                                              "An IO error occurred during all reduce with tag " << tag << "; Aborting collective communications operation...";
                                                   }
                                                   if (abort_packet_received) {
                                                       LOG(WARN) <<
@@ -1266,7 +1266,7 @@ bool ccoip::CCoIPClientHandler::allReduceAsync(const void *sendbuff, void *recvb
                                                       }
                                                       if (aborted) {
                                                           LOG(WARN) <<
-                                                                  "Collective communications operation was aborted";
+                                                                  "Collective communications operation with tag " << tag << " was aborted";
                                                           return false;
                                                       }
                                                       return true;
@@ -1294,6 +1294,24 @@ bool ccoip::CCoIPClientHandler::joinAsyncReduce(const uint64_t tag) {
         return false;
     }
     if (*failure_opt) {
+        // Discard all receive data in multiplexed p2p sockets for the tag of the failed reduce operation.
+        // Otherwise, it can be that old data will be mistaken to be
+        // good data in the next all reduce, which will inadvertently
+        // throw off byte counters where one peer could have "received all the data"
+        // while another peer is not yet done sending it because there was old data
+        // that caused this discrepancy.
+        // We also know that post joining the reduce operation, all peers have indicated completion of the
+        // collection operation, and we thus know that we will not receive more p2p data and in turn
+        // that discarding all data at this point safely discards all data still associated with the old aborted
+        // collective communication operation.
+        {
+            std::shared_lock lock(p2p_connections_rx_mutex);
+            for (auto &[peer_uuid, socket]: p2p_connections_rx) {
+                socket->discardReceivedData(tag);
+            }
+        }
+        LOG(DEBUG) << "Discarded un-consumed data for failed collective comms operation with tag " << tag;
+
         // In that next invocation, we need to have the new topology ready
         // as necessitated that a peer just dropped, causing the abort.
         // We thus re-establish p2p connections according to the new topology as determined by the master,
@@ -1313,23 +1331,6 @@ bool ccoip::CCoIPClientHandler::joinAsyncReduce(const uint64_t tag) {
             }
         }
         LOG(DEBUG) << "Successfully re-established p2p connections after collective comms operation " << tag << " was aborted";
-
-        // Discard all receive data in multiplexed p2p sockets for the tag of the failed reduce operation.
-        // Otherwise, it can be that old data will be mistaken to be
-        // good data in the next all reduce, which will inadvertently
-        // throw off byte counters where one peer could have "received all the data"
-        // while another peer is not yet done sending it because there was old data
-        // that caused this discrepancy.
-        // We also know that post joining the reduce operation, all peers have indicated completion of the
-        // collection operation, and we thus know that we will not receive more p2p data and in turn
-        // that discarding all data at this point safely discards all data still associated with the old aborted
-        // collective communication operation.
-        {
-            std::shared_lock lock(p2p_connections_rx_mutex);
-            for (auto &[peer_uuid, socket]: p2p_connections_rx) {
-                socket->discardReceivedData(tag);
-            }
-        }
         return false;
     }
     return true;

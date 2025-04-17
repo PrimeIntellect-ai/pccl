@@ -33,6 +33,13 @@ from typing_extensions import Optional
 from model import GPTConfig, GPT
 from python.examples.nanogptddp.profiler import Profiler, ProfilerCollection
 
+def compute_crc32(tensor: torch.Tensor) -> int:
+    tensor_cpu = tensor.detach().cpu()
+    tensor_contiguous = tensor_cpu.contiguous()
+    tensor_np = tensor_contiguous.numpy()
+    tensor_bytes = tensor_np.tobytes()
+    checksum = zlib.crc32(tensor_bytes)
+    return checksum
 
 def all_reduce_multiple_with_retry(communicator: Communicator,
                                    tensors: list[torch.Tensor],
@@ -60,11 +67,9 @@ def all_reduce_multiple_with_retry(communicator: Communicator,
         )
         descriptors.append(reduce_op_descriptor)
         tag += 1
-    try:
-        info = communicator.all_reduce_multiple_with_retry(descriptors, max_in_flight=max_in_flight)
-        return True, info.tx_bytes, info.rx_bytes
-    except PCCLError:
-        return False, 0, 0
+
+    info = communicator.all_reduce_multiple_with_retry(descriptors, max_in_flight=max_in_flight)
+    return True, info.tx_bytes, info.rx_bytes
 
 def get_batch(split, config, device_type, device, train: bool):
     """
@@ -413,7 +418,8 @@ def main():
             if local_iter_num > 1:
                 while True:
                     try:
-                        if communicator.are_peers_pending():
+                        #if communicator.are_peers_pending():
+                        if True:
                             print("peers pending; awaiting concurrent collective ops and accepting new peers...")
                             if all_reduce_thread is not None:
                                 all_reduce_thread.join()
@@ -442,6 +448,7 @@ def main():
 
         # 3) Sync shared state => ensures we have the same aggregator (outer) parameters
         if topology_updated:
+            print("Topology updated; Perform ordinary shared state synchronization")
             run_shared_state_sync()
 
         # Set learning rate for both inner and outer optimizers
@@ -524,6 +531,8 @@ def main():
                 # populate outer param grads with last pseudo-gradients set by thread
                 for pseudo_grad, outer_p in zip(last_pseudo_grads, outer_params_list):
                     outer_p.grad = pseudo_grad
+                    print("outer_p:", compute_crc32(outer_p.data))
+                    print("outer_p.grad:", compute_crc32(outer_p.grad))
 
             # Compute current pseudo grads as difference between outer and inner state.
             # Inner state is advanced by inner steps, outer state is unchanged
@@ -566,6 +575,8 @@ def main():
                     # We obtain the shared state first and then simply copy it into the inner model afterwards.
                     # Also: late_joiner here means that we tolerate actually receiving bytes here despite that this is the second sync that was performed.
                     # This is necessary for the pipeline insertion algorithm to function
+                    print(
+                        "Joining peer; re-running shared state synchronization to obtain result of previous outer step")
                     run_shared_state_sync(late_joiner=True)
 
                 # This is the boostrap for the 1-step behind asynchronous training step.

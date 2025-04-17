@@ -6,7 +6,7 @@
   "eval_only": false,
   "always_save_checkpoint": true,
   "init_from": "scratch",
-  "wandb_log": true,
+  "wandb_log": false,
   "wandb_project": "nanogpt_diloco",
   "wandb_run_name": "gpt2",
   "dataset": "openwebtext",

@@ -28,7 +28,11 @@ namespace {
             // check PCCL_MULTIPLEX_CHUNK_SIZE environment variable
             const char *env_chunk_size = std::getenv("PCCL_MULTIPLEX_CHUNK_SIZE");
             if (env_chunk_size) {
-                chunk_size = std::stoull(env_chunk_size);
+                try {
+                    chunk_size = std::stoull(env_chunk_size);
+                } catch (...) {
+                    chunk_size = DEFAULT_MULTIPLEX_CHUNK_SIZE;
+                }
             } else {
                 chunk_size = DEFAULT_MULTIPLEX_CHUNK_SIZE;
             }
@@ -159,18 +163,17 @@ namespace {
             if (bytes_sent < total_tx_size) {
                 const size_t chunk_size = std::min(GetPCCLMultiplexChunkSize(), total_tx_size - bytes_sent);
                 const auto send_sub = tx_span.subspan(bytes_sent, chunk_size);
-                if (tx_socket->sendBytes(tag, send_sub)) {
+                tpark_handle_t *done_handle = nullptr;
+                if (tx_socket->sendBytes(tag, send_sub, false, &done_handle)) {
                     no_event = false;
                     bytes_sent += send_sub.size_bytes();
                     client_state.trackCollectiveComsTxBytes(tag, send_sub.size_bytes());
                 } else {
                     return {false, false};
                 }
+                tparkWait(done_handle, true);
+                tparkDestroyHandle(done_handle);
             }
-            /*if (tx_done_handle != nullptr) {
-                tparkWait(tx_done_handle, true);
-                tparkDestroyHandle(tx_done_handle);
-            }*/
 
             // 3b) Receive if ready
             if (bytes_recvd < total_rx_size) {
@@ -310,7 +313,6 @@ namespace {
         size_t bytes_recvd = 0;
 
         size_t no_event_ctr = 0;
-        std::vector<tpark_handle_t *> done_handles{};
         while (bytes_sent < total_tx_size || bytes_recvd < total_rx_size) {
             bool no_event = true;
 
@@ -326,7 +328,8 @@ namespace {
                 } else {
                     return {false, false};
                 }
-                done_handles.push_back(done_handle);
+                tparkWait(done_handle, true);
+                tparkDestroyHandle(done_handle);
             }
 
             // Receive
@@ -375,10 +378,6 @@ namespace {
                 }
                 no_event_ctr = 0;
             }
-        }
-        for (tpark_handle_t *done_handle : done_handles) {
-            tparkWait(done_handle, true);
-            tparkDestroyHandle(done_handle);
         }
         return {true, false};
     }
@@ -451,7 +450,6 @@ namespace {
                 const size_t size = sizes[i];
                 if (ptr != nullptr) {
                     allocator.release(ptr, size);
-                    break;
                 }
             }
         }
