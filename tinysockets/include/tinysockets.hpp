@@ -516,8 +516,10 @@ namespace tinysockets {
             return receiveNextPacket<T>(tag, id, no_wait);
         }
 
-        /// Discards all received data that was not yet consumed by @code receiveBytes@endcode for the specified tag
-        void discardReceivedData(uint64_t tag) const;
+        /// Discards all received data that was not yet consumed by @code receiveBytes@endcode for the specified tag.
+        /// WARNING: This function is not thread-safe and should only be called if the user knows that there is no
+        /// separate thread consuming data for the specified tag.
+        void discardReceivedData_Unsafe(uint64_t tag) const;
 
         void join();
 
@@ -533,19 +535,12 @@ namespace tinysockets {
 
         [[nodiscard]] bool receivePacketData(std::span<std::uint8_t> &dst) const;
 
-        /// Closes the socket.
-        /// Note: this method will discard all data still queued for sending
-        [[nodiscard]] bool closeConnection();
-
         template<typename T> requires std::is_base_of_v<ccoip::Packet, T>
         [[nodiscard]] std::optional<T> receiveNextPacket(const uint64_t tag, const ccoip::packetId_t packet_id,
                                                          const bool no_wait) {
             std::span<std::byte> data_span{};
             auto data_uptr_opt = receiveBytes(tag, data_span, no_wait);
             if (!data_uptr_opt) {
-                return std::nullopt;
-            }
-            if (data_uptr_opt == nullptr) {
                 return std::nullopt;
             }
             const std::unique_ptr<std::byte[]> data_uptr = std::move(*data_uptr_opt);

@@ -25,7 +25,6 @@ static bool configure_socket_fd(const int socket_fd) {
         closesocket(socket_fd);
         return false;
     }
-
     // enable SO_BUSY_POLL if available
 #ifdef SO_BUSY_POLL
     setsockoptvp(socket_fd, SOL_SOCKET, SO_BUSY_POLL, &opt, sizeof(opt));
@@ -81,10 +80,11 @@ namespace tinysockets {
             // we trust the user to set size correctly; there is only one intended call-site anyways
             std::unique_lock lock(mutex);
             if (pool.size() >= POOLED_ALLOCATOR_MAX_ENTRIES) {
-                free(const_cast<void *>(ptr));
-            } else {
-                pool.emplace_back(const_cast<void *>(ptr), size);
+                const auto begin = pool.begin();
+                free(begin->first);
+                pool.erase(begin);
             }
+            pool.emplace_back(const_cast<void *>(ptr), size);
         }
 
         ~PooledAllocator() {
@@ -132,7 +132,11 @@ bool tinysockets::MultiplexedIOSocket::establishConnection() {
     if (socket_fd != 0) {
         return false;
     }
-    socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (connect_sockaddr.inet.protocol == inetIPv4) {
+        socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    } else if (connect_sockaddr.inet.protocol == inetIPv6) {
+        socket_fd = socket(AF_INET6, SOCK_STREAM, 0);
+    }
     if (socket_fd < 0) [[unlikely]] {
         LOG(ERR) << "Failed to create socket";
         return false;
@@ -190,9 +194,10 @@ bool tinysockets::MultiplexedIOSocket::establishConnection() {
 
 std::optional<size_t> tinysockets::MultiplexedIOSocket::receivePacketLength() const {
     uint64_t length;
+    auto* data = reinterpret_cast<uint8_t*>(&length);
     size_t n_received = 0;
     do {
-        const ssize_t i = recvvp(socket_fd, &length, sizeof(length), 0);
+        const ssize_t i = recvvp(socket_fd, data + n_received, sizeof(length) - n_received, 0);
         if (const bool running = this->running.load(std::memory_order_acquire); i == -1 || i == 0 || !running) {
             const std::string error_message = std::strerror(errno);
             if (running) {
@@ -254,6 +259,7 @@ bool tinysockets::MultiplexedIOSocket::run() {
                     if (!interrupt()) [[unlikely]] {
                         LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
                     }
+                    break;
                 }
 
                 length -= sizeof(uint64_t); // subtract the tag size
@@ -270,6 +276,7 @@ bool tinysockets::MultiplexedIOSocket::run() {
                     } else {
                         LOG(INFO) << "MultiplexedIOSocket::run() interrupted, exiting receive loop...";
                     }
+                    internal_state->rx_allocator.release(data_ptr, length);
                     break;
                 }
 
@@ -297,6 +304,16 @@ bool tinysockets::MultiplexedIOSocket::run() {
 
                             // don't include the tag in the data span
                             .data_span = std::span(raw_ptr, data.size_bytes())});
+                }
+            }
+            LOG(INFO) << "MultiplexedIOSocket::run() interrupted, exiting receive loop...";
+
+            // drain the receive-queues and release all allocated memory back into the pool
+            for (auto &[tag, queue] : internal_state->receive_queues) {
+                const ReceiveQueueEntry *entry{};
+                while ((entry = queue->front()) != nullptr) {
+                    internal_state->rx_allocator.release(entry->data, entry->data_size);
+                    queue->pop();
                 }
             }
         });
@@ -338,31 +355,62 @@ bool tinysockets::MultiplexedIOSocket::run() {
                                 entry->size_bytes + sizeof(uint64_t) // size including the subsequent tag
                                 ),
                         network_order_utils::host_to_network(entry->tag)};
-                const ssize_t i = sendvp(socket_fd, preamble, sizeof(preamble), MSG_NOSIGNAL);
-                if (i == 0) {
-                    LOG(ERR) << "Connection was closed while sending preamble for packet with tag " << entry->tag
-                             << "; exiting send loop...";
-                    if (!interrupt()) {
-                        LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
+                {
+                    const ssize_t i = sendvp(socket_fd, preamble, sizeof(preamble), MSG_NOSIGNAL);
+                    if (i == 0) {
+                        LOG(ERR) << "Connection was closed while sending preamble for packet with tag " << entry->tag
+                                 << "; exiting send loop...";
+                        if (!interrupt()) {
+                            LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
+                        }
+                        // wake on error
+                        if (entry->done_handle != nullptr) {
+                            tparkWake(entry->done_handle);
+                        }
+                        delete entry;
+                        break;
                     }
-                    delete entry;
-                    break;
+                    if (i == -1) {
+                        if (errno == ENOBUFS) {
+                            // this is most certainly a socket impl bug and if this ever happens, we are screwed
+                            LOG(DEBUG) << "Kernel send buffer is full; Tried to send too much data without opposite "
+                                          "peer catching up. Backing off...";
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            continue;
+                        }
+                        const std::string error_message = std::strerror(errno);
+                        LOG(ERR) << "Failed to send packet preamble for packet with tag " << entry->tag
+                                 << " with error: " << error_message;
+                        if (!interrupt()) {
+                            LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
+                        }
+                        if (entry->done_handle != nullptr) {
+                            tparkWake(entry->done_handle);
+                        }
+                        break;
+                    }
                 }
 
-                LOG(TRACE) << "MultiplexedIOSocket: Sent packet with length " << entry->size_bytes << " and tag " << entry->tag;
+                LOG(TRACE) << "MultiplexedIOSocket: Sent packet with length " << entry->size_bytes << " and tag "
+                           << entry->tag;
                 size_t n_sent = 0;
                 do {
-                    const ssize_t i = sendvp(socket_fd, entry->data + n_sent, entry->size_bytes - n_sent, MSG_NOSIGNAL);
-                    if (i == 0) {
+                    const ssize_t n_bytes =
+                            sendvp(socket_fd, entry->data + n_sent, entry->size_bytes - n_sent, MSG_NOSIGNAL);
+                    if (n_bytes == 0) {
                         LOG(ERR) << "Connection was closed while sending packet data for packet with tag " << entry->tag
                                  << "; exiting send loop...";
                         if (!interrupt()) {
                             LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
                         }
+                        // wake on error
+                        if (entry->done_handle != nullptr) {
+                            tparkWake(entry->done_handle);
+                        }
                         break;
                     }
 
-                    if (i == -1) {
+                    if (n_bytes == -1) {
                         if (errno == ENOBUFS) {
                             // this is most certainly a socket impl bug and if this ever happens, we are screwed
                             LOG(DEBUG) << "Kernel send buffer is full; Tried to send too much data without opposite "
@@ -376,9 +424,12 @@ bool tinysockets::MultiplexedIOSocket::run() {
                         if (!interrupt()) {
                             LOG(ERR) << "Failed to interrupt MultiplexedIOSocket";
                         }
+                        if (entry->done_handle != nullptr) {
+                            tparkWake(entry->done_handle);
+                        }
                         break;
                     }
-                    n_sent += i;
+                    n_sent += n_bytes;
                 } while (n_sent < entry->size_bytes);
                 if (entry->is_cloned) {
                     internal_state->tx_allocator.release(entry->data, entry->size_bytes);
@@ -389,6 +440,20 @@ bool tinysockets::MultiplexedIOSocket::run() {
                 delete entry;
             }
             LOG(INFO) << "MultiplexedIOSocket::run() interrupted, exiting send loop...";
+
+            // drain the send queue and wake all waiting threads for safe shutdown
+            {
+                const SendQueueEntry *entry = nullptr;
+                while ((entry = internal_state->send_queue.dequeue(false)) != nullptr) {
+                    if (entry->done_handle) {
+                        tparkWake(entry->done_handle);
+                    }
+                    if (entry->is_cloned) {
+                        internal_state->tx_allocator.release(entry->data, entry->size_bytes);
+                    }
+                    delete entry;
+                }
+            }
         });
     }
     return true;
@@ -407,7 +472,7 @@ bool tinysockets::MultiplexedIOSocket::receivePacketData(std::span<std::uint8_t>
             return false;
         }
         n_received += i;
-    } while (n_received < dst.size_bytes() && running && socket_fd != 0);
+    } while (n_received < dst.size_bytes() && running.load(std::memory_order_acquire) && socket_fd != 0);
     return true;
 }
 
@@ -442,6 +507,13 @@ bool tinysockets::MultiplexedIOSocket::sendBytes(const uint64_t tag, const std::
 
     {
         if (!internal_state->send_queue.enqueue(entry, true)) {
+            if (entry->done_handle) {
+                tparkWake(entry->done_handle);
+            }
+            if (entry->is_cloned) {
+                internal_state->tx_allocator.release(entry->data, entry->size_bytes);
+            }
+            delete entry;
             LOG(ERR) << "MultiplexedIOSocket::sendBytes() failed to enqueue data; MPSC queue is full";
             return false;
         }
@@ -470,6 +542,7 @@ std::optional<ssize_t> tinysockets::MultiplexedIOSocket::receiveBytesInplace(con
 
         if (entry.tag != tag) {
             LOG(BUG) << "Obtained packet from SPMCQueue with unexpected tag " << entry.tag << "; expected " << tag;
+            internal_state->rx_allocator.release(entry.data, entry.data_size);
             continue;
         }
         // ensure buffer is large enough
@@ -506,9 +579,8 @@ std::optional<std::unique_ptr<std::byte[]>> tinysockets::MultiplexedIOSocket::re
         const auto &queue = internal_state->receive_queues.at(tag);
         const auto entry_ptr = queue->front();
         if (entry_ptr == nullptr) {
-            std::this_thread::yield();
             if (no_wait) {
-                return nullptr;
+                return std::nullopt;
             }
             continue;
         }
@@ -517,6 +589,7 @@ std::optional<std::unique_ptr<std::byte[]>> tinysockets::MultiplexedIOSocket::re
 
         if (entry.tag != tag) {
             LOG(BUG) << "Obtained packet from SPMCQueue with unexpected tag " << entry.tag << "; expected " << tag;
+            internal_state->rx_allocator.release(entry.data, entry.data_size);
             continue;
         }
 
@@ -531,7 +604,7 @@ std::optional<std::unique_ptr<std::byte[]>> tinysockets::MultiplexedIOSocket::re
     }
 }
 
-void tinysockets::MultiplexedIOSocket::discardReceivedData(const uint64_t tag) const {
+void tinysockets::MultiplexedIOSocket::discardReceivedData_Unsafe(const uint64_t tag) const {
     std::unique_lock lock{internal_state->receive_queues_mutex};
     {
         const auto it = internal_state->receive_queues.find(tag);
@@ -539,45 +612,26 @@ void tinysockets::MultiplexedIOSocket::discardReceivedData(const uint64_t tag) c
             return;
         }
         const auto &queue = it->second;
-        while (queue->front() != nullptr) {
+        const ReceiveQueueEntry *entry{};
+        while ((entry = queue->front()) != nullptr) {
+            internal_state->rx_allocator.release(entry->data, entry->data_size);
             queue->pop();
         }
     }
 }
 
-bool tinysockets::MultiplexedIOSocket::closeConnection() {
+bool tinysockets::MultiplexedIOSocket::interrupt() {
+    if (running.load(std::memory_order_acquire)) {
+        running.store(false, std::memory_order_release);
+        if (internal_state->tx_park_handle != nullptr) {
+            tparkWake(internal_state->tx_park_handle); // wake up tx thread such that it can exit
+        }
+    }
+
+    // still close the socket even if we are not running if we have one.
+    // e.g. if run() was never called, we still want to close the socket.
     if (socket_fd == 0) {
         return false;
-    }
-
-    // exchange socket fd & set running to false before actually closing it so loop reacts as early as possible
-    running.store(false, std::memory_order_release);
-    const int socket_fd = this->socket_fd;
-    this->socket_fd = 0;
-
-    if (internal_state->tx_park_handle != nullptr) {
-        tparkWake(internal_state->tx_park_handle); // wake up tx thread such that it can exit
-    }
-
-    // Shut everything down.
-    // This is needed to ensure recv() unblock and return an error.
-    // Docker is pedantic about this.
-    shutdown(socket_fd, SHUT_RDWR);
-
-    // finally, close the socket
-    closesocket(socket_fd);
-    return true;
-}
-
-bool tinysockets::MultiplexedIOSocket::interrupt() {
-    if (!running.load(std::memory_order_acquire)) {
-        // already interrupted, either through discovery by io threads or external user
-        return true;
-    }
-
-    running.store(false, std::memory_order_release);
-    if (internal_state->tx_park_handle != nullptr) {
-        tparkWake(internal_state->tx_park_handle); // wake up tx thread such that it can exit
     }
 
     // Shutdown both sides of the connection.

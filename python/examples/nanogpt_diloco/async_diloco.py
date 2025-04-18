@@ -418,8 +418,7 @@ def main():
             if local_iter_num > 1:
                 while True:
                     try:
-                        #if communicator.are_peers_pending():
-                        if True:
+                        if communicator.are_peers_pending():
                             print("peers pending; awaiting concurrent collective ops and accepting new peers...")
                             if all_reduce_thread is not None:
                                 all_reduce_thread.join()
@@ -531,8 +530,8 @@ def main():
                 # populate outer param grads with last pseudo-gradients set by thread
                 for pseudo_grad, outer_p in zip(last_pseudo_grads, outer_params_list):
                     outer_p.grad = pseudo_grad
-                    print("outer_p:", compute_crc32(outer_p.data))
-                    print("outer_p.grad:", compute_crc32(outer_p.grad))
+                    #print("outer_p:", compute_crc32(outer_p.data))
+                    #print("outer_p.grad:", compute_crc32(outer_p.grad))
 
             # Compute current pseudo grads as difference between outer and inner state.
             # Inner state is advanced by inner steps, outer state is unchanged

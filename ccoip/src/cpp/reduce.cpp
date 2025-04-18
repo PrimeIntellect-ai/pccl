@@ -31,6 +31,7 @@ namespace {
                 try {
                     chunk_size = std::stoull(env_chunk_size);
                 } catch (...) {
+                    LOG(ERR) << "Invalid value for environment variable PCCL_MULTIPLEX_CHUNK_SIZE: " << env_chunk_size;
                     chunk_size = DEFAULT_MULTIPLEX_CHUNK_SIZE;
                 }
             } else {
@@ -169,6 +170,7 @@ namespace {
                     bytes_sent += send_sub.size_bytes();
                     client_state.trackCollectiveComsTxBytes(tag, send_sub.size_bytes());
                 } else {
+                    tparkDestroyHandle(done_handle);
                     return {false, false};
                 }
                 tparkWait(done_handle, true);
@@ -326,6 +328,7 @@ namespace {
                     bytes_sent += send_sub.size_bytes();
                     client_state.trackCollectiveComsTxBytes(tag, send_sub.size_bytes());
                 } else {
+                    tparkDestroyHandle(done_handle);
                     return {false, false};
                 }
                 tparkWait(done_handle, true);
@@ -405,10 +408,11 @@ namespace {
             // we trust the user to set size correctly; there is only one intended call-site anyways
             std::unique_lock lock(mutex);
             if (pool.size() >= POOLED_ALLOCATOR_MAX_ENTRIES) {
-                free(const_cast<void *>(ptr));
-            } else {
-                pool.emplace_back(const_cast<void *>(ptr), size);
+                const auto begin = pool.begin();
+                free(begin->first);
+                pool.erase(begin);
             }
+            pool.emplace_back(const_cast<void *>(ptr), size);
         }
 
         ~PooledAllocator() {

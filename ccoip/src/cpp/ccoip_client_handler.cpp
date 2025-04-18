@@ -1241,6 +1241,7 @@ bool ccoip::CCoIPClientHandler::allReduceAsync(const void *sendbuff, void *recvb
                                                               tag;
 
                                                       if (!abort_packet_received) {
+                                                          LOG(DEBUG) << "Waiting for M2CPacketCollectiveCommsAbort packet for tag " << tag << "...";
                                                           const auto abort_response = master_socket.
                                                                   receiveMatchingPacket<M2CPacketCollectiveCommsAbort>(
                                                                       [tag](const M2CPacketCollectiveCommsAbort &
@@ -1253,6 +1254,7 @@ bool ccoip::CCoIPClientHandler::allReduceAsync(const void *sendbuff, void *recvb
                                                           aborted = abort_response->aborted;
                                                       }
 
+                                                      LOG(DEBUG) << "Waiting for M2CPacketCollectiveCommsComplete packet for tag " << tag << "...";
                                                       const auto complete_response =
                                                               master_socket.receiveMatchingPacket<
                                                                   M2CPacketCollectiveCommsComplete>(
@@ -1307,7 +1309,13 @@ bool ccoip::CCoIPClientHandler::joinAsyncReduce(const uint64_t tag) {
         {
             std::shared_lock lock(p2p_connections_rx_mutex);
             for (auto &[peer_uuid, socket]: p2p_connections_rx) {
-                socket->discardReceivedData(tag);
+                // NOTE: discardReceivedData is not thread-safe and must only ever be called if we know
+                // that there is no other thread consuming data. Since we have just joined the all reduce operation,
+                // which was executing operations on said socket, we know that no other thread is consuming data from
+                // the receive-queue.
+                // We might still *receive* data on the RX-Thread - meaning producing - on the single producer - the TX
+                // thread there is - but we know that nothing except this thread is *consuming* data from the receive-queue.
+                socket->discardReceivedData_Unsafe(tag);
             }
         }
         LOG(DEBUG) << "Discarded un-consumed data for failed collective comms operation with tag " << tag;

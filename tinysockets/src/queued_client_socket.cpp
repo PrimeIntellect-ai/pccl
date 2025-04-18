@@ -160,7 +160,11 @@ bool tinysockets::QueuedSocket::establishConnection() {
     if (socket_fd != 0) {
         return false;
     }
-    socket_fd = create_socket(AF_INET, SOCK_STREAM, 0);
+    if (connect_sockaddr.inet.protocol == inetIPv4) {
+        socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    } else if (connect_sockaddr.inet.protocol == inetIPv6) {
+        socket_fd = socket(AF_INET6, SOCK_STREAM, 0);
+    }
     if (socket_fd < 0) [[unlikely]] {
         LOG(ERR) << "Failed to create socket";
         return false;
@@ -237,9 +241,10 @@ bool tinysockets::QueuedSocket::closeConnection() {
 
 std::optional<size_t> tinysockets::QueuedSocket::receivePacketLength() const {
     uint64_t length;
+    auto* data = reinterpret_cast<uint8_t*>(&length);
     size_t n_received = 0;
     do {
-        const ssize_t i = recvvp(socket_fd, &length, sizeof(length), 0);
+        const ssize_t i = recvvp(socket_fd, data + n_received, sizeof(length) - n_received, 0);
         if (i == -1 || i == 0 || !running) {
             const std::string error_message = std::strerror(errno);
             if (running) {

@@ -41,7 +41,11 @@ bool tinysockets::BlockingIOSocket::establishConnection() {
     if (socket_fd != 0) {
         return false;
     }
-    socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (connect_sockaddr.inet.protocol == inetIPv4) {
+        socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    } else if (connect_sockaddr.inet.protocol == inetIPv6) {
+        socket_fd = socket(AF_INET6, SOCK_STREAM, 0);
+    }
     if (socket_fd <= 0) [[unlikely]] {
         const std::string error_message = std::strerror(errno);
         LOG(ERR) << "Failed to create socket: " << error_message;
@@ -262,6 +266,7 @@ void tinysockets::BlockingIOSocket::maximizeReceiveBuffer() const {
 
 std::optional<size_t> tinysockets::BlockingIOSocket::receivePacketLength(const bool no_wait) const {
     uint64_t length;
+    auto* data = reinterpret_cast<uint8_t*>(&length);
     size_t n_received = 0;
     do {
         ssize_t i = 0;
@@ -273,7 +278,7 @@ std::optional<size_t> tinysockets::BlockingIOSocket::receivePacketLength(const b
                 LOG(ERR) << "Failed to set socket into non-blocking mode";
                 return std::nullopt;
             }
-            i = recvvp(socket_fd, &length, sizeof(length), 0);
+            i = recvvp(socket_fd, data + n_received, sizeof(length) - n_received, 0);
 
             // set socket back to blocking mode
             mode = 0;
@@ -296,7 +301,7 @@ std::optional<size_t> tinysockets::BlockingIOSocket::receivePacketLength(const b
             }
 
             // perform the non-blocking recv
-            i = recvvp(socket_fd, &length, sizeof(length), 0);
+            i = recvvp(socket_fd, data + n_received, sizeof(length) - n_received, 0);
 
             // set back to blocking mode
             flags &= ~O_NONBLOCK;
@@ -306,10 +311,10 @@ std::optional<size_t> tinysockets::BlockingIOSocket::receivePacketLength(const b
             }
 #else
             // Linux, FreeBSD and other Unix-like systems support MSG_DONTWAIT
-            i = recvvp(socket_fd, &length, sizeof(length), MSG_DONTWAIT);
+            i = recvvp(socket_fd, data + n_received, sizeof(length) - n_received, MSG_DONTWAIT);
 #endif
         } else {
-            i = recvvp(socket_fd, &length, sizeof(length), 0);
+            i = recvvp(socket_fd, data + n_received, sizeof(length) - n_received, 0);
         }
         if (no_wait) {
             if (i == -1 || i == 0) {

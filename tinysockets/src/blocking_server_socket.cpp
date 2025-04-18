@@ -70,7 +70,12 @@ bool tinysockets::BlockingIOServerSocket::listen() {
         return false;
     }
 
-    socket_fd = create_socket(AF_INET, SOCK_STREAM, 0);
+
+    if (listen_address.inet.protocol == inetIPv4) {
+        socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    } else if (listen_address.inet.protocol == inetIPv6) {
+        socket_fd = socket(AF_INET6, SOCK_STREAM, 0);
+    }
     if (socket_fd == -1) {
         return false;
     }
