@@ -17,6 +17,8 @@ void uv_err_check(const int status) {
 
 #define UV_ERR_CHECK(status) uv_err_check(status)
 
+#define KEEP_ALIVE_SECONDS 60
+
 namespace tinysockets {
     struct RecvBuffer {
         /// The expected length of the packet
@@ -363,6 +365,9 @@ void tinysockets::ServerSocket::onNewConnection(uv_server_stream_t *server, cons
     UV_ERR_CHECK(uv_tcp_init(server_socket_state->loop.get(), client));
     client->data = this;
     if (uv_accept(reinterpret_cast<uv_stream_t *>(server), reinterpret_cast<uv_stream_t *>(client)) == 0) {
+        // the kernel should start probing if a connection is dead on our behalf after ~60 seconds
+        uv_tcp_keepalive(client, 1, KEEP_ALIVE_SECONDS);
+
         LOG(INFO) << "New connection accepted";
 
         const auto client_addr = getUvStreamAddress(reinterpret_cast<uv_stream_t *>(client));
