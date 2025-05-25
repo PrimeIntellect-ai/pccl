@@ -3,7 +3,7 @@
 #include <optional>
 #include <ccoip_master.hpp>
 #include <pccl_log.hpp>
-#include <unordered_set>
+#include <vector>
 
 static constinit bool pccl_initialized = false;
 
@@ -389,7 +389,7 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
 
     // stores all indices of completed reduce operations
     // in range [0, count)
-    std::unordered_set<size_t> completed_ops{};
+    std::vector<bool> completed_ops(count, false);
 
     while (local_world_size > 1) {
         bool all_done = true;
@@ -398,7 +398,7 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
             if (reduce_handle_opt == std::nullopt) {
                 // no reduce handle exists for this operation yet,
                 // so it needs to be launched.
-                if (completed_ops.contains(i)) {
+                if (completed_ops[i]) {
                     continue;
                 }
                 // the reduce handle is not yet completed
@@ -428,7 +428,7 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
             // check if all operations have been launched
             bool all_launched = true;
             for (size_t j = 0; j < count; ++j) {
-                if (reduce_handles[j] == std::nullopt && !completed_ops.contains(j)) {
+                if (reduce_handles[j] == std::nullopt && !completed_ops[j]) {
                     all_launched = false;
                     break;
                 }
@@ -463,7 +463,7 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
                     if (h_j != std::nullopt) {
                         const pcclResult_t s_j = pcclAwaitAsyncReduce(&h_j.value(), nullptr);
                         if (s_j == pcclSuccess) {
-                            completed_ops.insert(j);
+                            completed_ops[j] = true;
                         }
                         in_flight--;
                     }
@@ -477,7 +477,7 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
             }
             // success for this handle
             reduce_handles[i] = std::nullopt;
-            completed_ops.insert(i);
+            completed_ops[i] = true;
 
             total_tx += reduce_info.tx_bytes;
             total_rx += reduce_info.rx_bytes;
