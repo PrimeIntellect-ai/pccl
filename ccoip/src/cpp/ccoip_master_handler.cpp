@@ -457,7 +457,7 @@ void ccoip::CCoIPMasterHandler::performTopologyOptimization(const uint32_t peer_
                         LOG(WARN) << "Failed to perform topology optimization!";
                         return;
                     }
-                    if (has_improved) {
+                    if (!has_improved) {
                         return;
                     }
                     if (!server_state.setRingTopology(peer_group, new_topology, is_optimal)) {
