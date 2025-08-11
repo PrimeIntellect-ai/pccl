@@ -148,7 +148,7 @@ namespace ccoip {
         std::string key;
         uint64_t hash;
         ccoip_hash_type_t hash_type;
-        size_t num_elements;
+        size_t data_size;
         ccoip_data_type_t data_type;
         bool allow_content_inequality;
 
@@ -156,7 +156,7 @@ namespace ccoip {
             return lhs.key == rhs.key
                    && lhs.hash == rhs.hash
                    && lhs.hash_type == rhs.hash_type
-                   && lhs.num_elements == rhs.num_elements
+                   && lhs.data_size == rhs.data_size
                    && lhs.data_type == rhs.data_type
                    && lhs.allow_content_inequality == rhs.allow_content_inequality;
         }
@@ -493,7 +493,7 @@ struct std::hash<ccoip::SharedStateHashEntry> {
         std::size_t hash_value = 0;
         hash_value ^= std::hash<std::string>{}(entry.key) << 1;
         hash_value ^= std::hash<uint64_t>{}(entry.hash) << 1;
-        hash_value ^= std::hash<size_t>{}(entry.num_elements) << 1;
+        hash_value ^= std::hash<size_t>{}(entry.data_size) << 1;
         hash_value ^= std::hash<ccoip::ccoip_data_type_t>{}(entry.data_type) << 1;
         hash_value ^= std::hash<boolean>{}(entry.allow_content_inequality) << 1;
         return hash_value;

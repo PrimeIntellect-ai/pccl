@@ -519,6 +519,9 @@ inline size_t pcclDataTypeSize(const pcclDataType_t datatype) {
         case pcclUint8:
         case pcclInt8:
             return 1;
+        case pcclBFloat16:
+        case pcclFloat16:
+        case pcclInt16:
         case pcclUint16:
             return 2;
         case pcclUint32:
