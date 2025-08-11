@@ -382,9 +382,9 @@ bool ccoip::CCoIPClientHandler::syncSharedState(ccoip_shared_state_t &shared_sta
         shared_state_hashes.push_back(SharedStateHashEntry{.key = key,
                                                            .hash = hash,
                                                            .hash_type = hash_type,
+                                                           .data_size = entry.data_size,
                                                            .data_type = entry.data_type,
-                                                           .allow_content_inequality = entry.allow_content_inequality,
-                                                           .data_size = entry.data_size});
+                                                           .allow_content_inequality = entry.allow_content_inequality});
     }
 
     // inside this block, we are guaranteed in the shared state distribution phase
