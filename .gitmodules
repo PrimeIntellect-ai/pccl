@@ -17,6 +17,7 @@
 [submodule "third_party/piquant"]
 	path = third_party/piquant
 	url = https://github.com/PrimeIntellect-ai/piquant.git
+	branch = main
 
 [submodule "third_party/threadpool"]
 	path = third_party/threadpool
