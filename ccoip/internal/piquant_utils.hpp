@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <thread>
 
 #include <piquant.hpp>
@@ -10,31 +11,13 @@ namespace ccoip::internal {
         return s_ctx;
     }
 
-    [[nodiscard]] inline piquant::dtype get_piquant_dtype(const ccoip_data_type_t type) {
+    [[nodiscard]] inline std::optional<piquant::dtype> get_piquant_dtype(const ccoip_data_type_t type) {
         switch (type) {
-            case ccoipInt8:
-                return piquant::dtype::int8;
-            case ccoipUint8:
-                return piquant::dtype::uint8;
-            case ccoipInt16:
-                return piquant::dtype::int16;
-            case ccoipUint16:
-                return piquant::dtype::uint16;
-            case ccoipInt32:
-                return piquant::dtype::int32;
-            case ccoipUint32:
-                return piquant::dtype::uint32;
-            case ccoipInt64:
-                return piquant::dtype::int64;
-            case ccoipUint64:
-                return piquant::dtype::uint64;
-            case ccoipFloat:
-                return piquant::dtype::f32;
-            case ccoipDouble:
-                return piquant::dtype::f64;
-            default:
-                break;
+            case ccoipFloat: return piquant::dtype::f32;
+            case ccoipBFloat16: return piquant::dtype::bf16;
+            case ccoipUint8: return piquant::dtype::uint8;
+            // Todo: add support for sub-byte types like uint4, uint2 etc
+            default: return std::nullopt;
         }
-        throw std::logic_error{"Unsupported data type"};
     }
 }
