@@ -567,7 +567,7 @@ TEST(SharedStateDistribution, TestPopularHashPrevalenceWithMultipleKeys) {
 
     // Function to create shared state with multiple keys
     auto create_shared_state = [&](const std::vector<std::unique_ptr<uint8_t[]>> &values) -> ccoip_shared_state_t {
-        ccoip_shared_state_t shared_state;
+        ccoip_shared_state_t shared_state{};
         for (size_t i = 0; i < total_keys; ++i) {
             shared_state.entries.push_back(ccoip_shared_state_entry_t{
                 .key = "key" + std::to_string(i + 1),
@@ -579,6 +579,7 @@ TEST(SharedStateDistribution, TestPopularHashPrevalenceWithMultipleKeys) {
             });
         }
         shared_state.revision = 0;
+        shared_state.sync_strategy = ccoipSyncStrategyEnforcePopular;
         return shared_state;
     };
 
