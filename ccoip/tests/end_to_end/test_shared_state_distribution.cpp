@@ -9,8 +9,6 @@
 #include <port_guard.h>
 #include <ranges>
 
-#include "../../../include/pccl.h"
-
 // Helper function to establish p2p connection between two clients
 static void establishConnections(const std::vector<ccoip::CCoIPClient *> &clients) {
     size_t n_clients = clients.size();
