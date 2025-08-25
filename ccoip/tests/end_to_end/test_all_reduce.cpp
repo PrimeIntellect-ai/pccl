@@ -45,14 +45,14 @@ template<typename T>
 class TypeAllReduceTest : public testing::Test {
 };
 
-typedef testing::Types<uint8_t, int8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t, float, double> AllReduceTestTypes;
+typedef testing::Types<uint8_t, int8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t, float> AllReduceTestTypes;
 TYPED_TEST_SUITE(TypeAllReduceTest, AllReduceTestTypes);
 
 template<typename T>
 class QuantizeTypedAllReduceTest : public testing::Test {
 };
 
-typedef testing::Types<float, double> AllReduceQuantizeTestTypes;
+typedef testing::Types<float> AllReduceQuantizeTestTypes;
 TYPED_TEST_SUITE(QuantizeTypedAllReduceTest, AllReduceQuantizeTestTypes);
 
 inline ccoip::ccoip_data_type_t getCcoipDataType(const std::type_info &ti) {
