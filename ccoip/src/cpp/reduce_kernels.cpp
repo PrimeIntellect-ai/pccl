@@ -368,14 +368,16 @@ void performReduction(const std::span<std::byte> &dst,
     switch (op) {
         case ccoip::ccoipOpSet:
             if (quantization_algorithm == ccoip::ccoipQuantizationZeroPointScale) {
-                if (src_type != dst_type) {
+                std::optional<piquant::dtype> pq_src = ccoip::internal::get_piquant_dtype(src_type);
+                std::optional<piquant::dtype> pq_dst = ccoip::internal::get_piquant_dtype(dst_type);
+                if (src_type != dst_type && pq_src.has_value() && pq_dst.has_value()) {
                     const auto scale = meta_data.scaleAs<float>();
                     const auto zp = meta_data.zeroPointAs<std::int64_t>();
                     ccoip::internal::get_quant_ctx().dequantize(
                         src,
-                        ccoip::internal::get_piquant_dtype(src_type),
+                        *pq_src,
                         dst,
-                        ccoip::internal::get_piquant_dtype(dst_type),
+                        *pq_dst,
                         scale,
                         zp,
                         piquant::reduce_op::set);
@@ -391,14 +393,16 @@ void performReduction(const std::span<std::byte> &dst,
         case ccoip::ccoipOpSum:
         case ccoip::ccoipOpAvg:
             if (quantization_algorithm == ccoip::ccoipQuantizationZeroPointScale) {
-                if (src_type != dst_type) {
+                std::optional<piquant::dtype> pq_src = ccoip::internal::get_piquant_dtype(src_type);
+                std::optional<piquant::dtype> pq_dst = ccoip::internal::get_piquant_dtype(dst_type);
+                if (src_type != dst_type && pq_src.has_value() && pq_dst.has_value()) {
                     const auto scale = meta_data.scaleAs<float>();
                     const auto zp = meta_data.zeroPointAs<std::int64_t>();
                     ccoip::internal::get_quant_ctx().dequantize(
                         src,
-                        ccoip::internal::get_piquant_dtype(src_type),
+                        *pq_src,
                         dst,
-                        ccoip::internal::get_piquant_dtype(dst_type),
+                        *pq_dst,
                         scale,
                         zp,
                         piquant::reduce_op::add);
