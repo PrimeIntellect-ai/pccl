@@ -133,7 +133,7 @@ pip install pypccl
 
 - Git
 - CMake (3.22.1 or higher)
-- C++ compiler with C++20 support (MSVC 17+, gcc 11+ or clang 12+)
+- C++ compiler with C++20 support (MSVC 17+, gcc 12+ or clang 12+)
 - Python 3.12+ (if bindings are used)
 - NVIDIA CUDA Computing Toolkit v12+ (if building with CUDA support)
 
