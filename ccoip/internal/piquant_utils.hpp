@@ -13,11 +13,17 @@ namespace ccoip::internal {
 
     [[nodiscard]] inline std::optional<piquant::dtype> get_piquant_dtype(const ccoip_data_type_t type) {
         switch (type) {
-            case ccoipFloat: return piquant::dtype::f32;
-            case ccoipBFloat16: return piquant::dtype::bf16;
-            case ccoipUint8: return piquant::dtype::uint8;
+            case ccoipUint8:
+                return piquant::dtype::uint8;
+            case ccoipUint4:
+                return piquant::dtype::uint4;
+            case ccoipFloat:
+                return piquant::dtype::f32;
+            case ccoipBFloat16:
+                return piquant::dtype::bf16;
             // Todo: add support for sub-byte types like uint4, uint2 etc
-            default: return std::nullopt;
+            default:
+                return std::nullopt;
         }
     }
-}
+} // namespace ccoip::internal
