@@ -124,7 +124,7 @@ int main() {
                     .op = pcclSum,
                     .tag = j,
                     .src_descriptor = {.datatype = pcclFloat, .distribution_hint = pcclDistributionNone},
-                    .quantization_options = {.quantized_datatype = pcclFloat, .algorithm = pcclQuantNone},
+                    .quantization_options = {.quantized_datatype = pcclUint4, .algorithm = pcclQuantZeroPointScale},
             };
             descriptors[j] =
                     pcclReduceOpDescriptor_t{.sendbuf = gradients[j], .recvbuf = gradients[j], .descriptor = desc};

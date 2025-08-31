@@ -1,20 +1,24 @@
 #include "pccl.h"
-#include "pccl_internal.hpp"
-#include <optional>
 #include <ccoip_master.hpp>
+#include <optional>
 #include <pccl_log.hpp>
 #include <unordered_set>
+#include "pccl_internal.hpp"
 
 static constinit bool pccl_initialized = false;
 
-#define PCCL_VALIDATE_INITIALIZED() \
-    if (!pccl_initialized) { \
-        return (pcclNotInitialized); \
+#define PCCL_VALIDATE_INITIALIZED()                                                                                    \
+    if (!pccl_initialized) {                                                                                           \
+        return (pcclNotInitialized);                                                                                   \
     }
 
-static pcclResult_t internalPcclInit() {
-    return pcclSuccess;
-}
+#define VALIDATE_SUPPORTED_INPUT_DATA_TYPE(dtype)                                                                      \
+    if (dtype == pcclUint4) {                                                                                          \
+        LOG(ERR) << "pccl: pcclUint4 is not supported as input data type";                                             \
+        return pcclInvalidArgument;                                                                                    \
+    }
+
+static pcclResult_t internalPcclInit() { return pcclSuccess; }
 
 pcclResult_t pcclInit() {
     if (pccl_initialized) {
@@ -32,9 +36,7 @@ pcclResult_t pcclCreateCommunicator(const pcclCommCreateParams_t *params, pcclCo
     return pcclSuccess;
 }
 
-pcclResult_t pcclGetAttribute(const pcclComm_t *communicator,
-                              const pcclAttribute_t attribute,
-                              int *p_attribute_out) {
+pcclResult_t pcclGetAttribute(const pcclComm_t *communicator, const pcclAttribute_t attribute, int *p_attribute_out) {
     PCCL_VALIDATE_INITIALIZED();
     PCCL_VALIDATE(communicator != nullptr, pcclInvalidArgument);
     PCCL_VALIDATE(communicator->ccoip_client != nullptr, pcclInvalidUsage);
@@ -86,9 +88,9 @@ pcclResult_t pcclConnect(pcclComm_t *communicator) {
     PCCL_VALIDATE_INITIALIZED();
     PCCL_VALIDATE(communicator != nullptr, pcclInvalidArgument);
     PCCL_VALIDATE(communicator->ccoip_client == nullptr, pcclInvalidUsage);
-    communicator->ccoip_client = std::make_unique<ccoip::CCoIPClient>(communicator->params.master_address,
-                                                                      communicator->params.peer_group,
-                                                                      std::max(1u, communicator->params.p2p_connection_pool_size));
+    communicator->ccoip_client =
+            std::make_unique<ccoip::CCoIPClient>(communicator->params.master_address, communicator->params.peer_group,
+                                                 std::max(1u, communicator->params.p2p_connection_pool_size));
 
     pcclResult_t status = pcclSuccess;
     if (!communicator->ccoip_client->connect()) {
@@ -114,6 +116,8 @@ failure:
 
 static std::optional<ccoip::ccoip_data_type_t> getCCoIPDataType(const pcclDataType_t datatype) {
     switch (datatype) {
+        case pcclUint4:
+            return ccoip::ccoipUint4;
         case pcclUint8:
             return ccoip::ccoipUint8;
         case pcclUint16:
@@ -235,10 +239,8 @@ pcclResult_t pcclOptimizeTopology(const pcclComm_t *communicator) {
     return pcclSuccess;
 }
 
-pcclResult_t pcclAllReduceAsync(const void *sendbuff, void *recvbuff,
-                                const pcclReduceDescriptor_t *descriptor,
-                                const pcclComm_t *communicator,
-                                pcclAsyncReduceOp_t *reduce_handle_out) {
+pcclResult_t pcclAllReduceAsync(const void *sendbuff, void *recvbuff, const pcclReduceDescriptor_t *descriptor,
+                                const pcclComm_t *communicator, pcclAsyncReduceOp_t *reduce_handle_out) {
     PCCL_VALIDATE_INITIALIZED();
     PCCL_VALIDATE(communicator != nullptr, pcclInvalidArgument);
     PCCL_VALIDATE(communicator->ccoip_client != nullptr, pcclInvalidUsage);
@@ -247,9 +249,8 @@ pcclResult_t pcclAllReduceAsync(const void *sendbuff, void *recvbuff,
     const size_t count = descriptor->count;
     const auto datatype = descriptor->src_descriptor.datatype;
     const auto quantization_algorithm = descriptor->quantization_options.algorithm;
-    const auto quantized_datatype = quantization_algorithm == pcclQuantNone
-                                        ? datatype
-                                        : descriptor->quantization_options.quantized_datatype;
+    const auto quantized_datatype =
+            quantization_algorithm == pcclQuantNone ? datatype : descriptor->quantization_options.quantized_datatype;
     const auto op = descriptor->op;
     const auto tag = descriptor->tag;
 
@@ -270,6 +271,19 @@ pcclResult_t pcclAllReduceAsync(const void *sendbuff, void *recvbuff,
         return pcclInvalidArgument;
     }
 
+    // uint4 is only supported with zero-point-scale quantization
+    if (quantized_datatype == pcclUint4 && quantization_algorithm != pcclQuantZeroPointScale) {
+        return pcclInvalidArgument;
+    }
+
+    // for uint4, the count must be even since we want to guarantee that it is possible to split the data chunks of even
+    // size, which is required such that each chunk start is byte-aligned
+    if (quantized_datatype == pcclUint4 && descriptor->count % 2 != 0) {
+        return pcclInvalidArgument;
+    }
+
+    VALIDATE_SUPPORTED_INPUT_DATA_TYPE(datatype);
+
     int local_world_size{};
     PCCL_ERR_PROPAGATE(pcclGetAttribute(communicator, PCCL_ATTRIBUTE_PEER_GROUP_WORLD_SIZE, &local_world_size));
 
@@ -278,22 +292,20 @@ pcclResult_t pcclAllReduceAsync(const void *sendbuff, void *recvbuff,
     }
 
     if (!communicator->ccoip_client->allReduceAsync(sendbuff, recvbuff, count, *ccoip_data_type,
-                                                    *ccoip_quantized_data_type,
-                                                    *ccoip_quantization_algorithm, *ccoip_op, tag)) {
+                                                    *ccoip_quantized_data_type, *ccoip_quantization_algorithm,
+                                                    *ccoip_op, tag)) {
         return pcclInvalidArgument;
     }
 
     *reduce_handle_out = pcclAsyncReduceOp_t{
-        .comm = const_cast<pcclComm_t *>(communicator),
-        .tag = tag,
+            .comm = const_cast<pcclComm_t *>(communicator),
+            .tag = tag,
     };
     return pcclSuccess;
 }
 
-pcclResult_t pcclAllReduce(const void *sendbuff, void *recvbuff,
-                           const pcclReduceDescriptor_t *descriptor,
-                           const pcclComm_t *communicator,
-                           pcclReduceInfo_t *PCCL_NULLABLE reduce_info_out) {
+pcclResult_t pcclAllReduce(const void *sendbuff, void *recvbuff, const pcclReduceDescriptor_t *descriptor,
+                           const pcclComm_t *communicator, pcclReduceInfo_t *PCCL_NULLABLE reduce_info_out) {
     PCCL_VALIDATE_INITIALIZED();
     PCCL_VALIDATE(communicator != nullptr, pcclInvalidArgument);
     PCCL_VALIDATE(communicator->ccoip_client != nullptr, pcclInvalidUsage);
@@ -336,8 +348,7 @@ pcclResult_t pcclAwaitAsyncReduce(const pcclAsyncReduceOp_t *reduce_handle,
 
 pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *descriptors, const size_t count,
                                             const pcclComm_t *communicator,
-                                            pcclReduceInfo_t *PCCL_NULLABLE reduce_info_out,
-                                            const int max_in_flight) {
+                                            pcclReduceInfo_t *PCCL_NULLABLE reduce_info_out, const int max_in_flight) {
     PCCL_VALIDATE_INITIALIZED();
 
     PCCL_VALIDATE(descriptors != nullptr, pcclInvalidArgument);
@@ -374,14 +385,9 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
 
         pcclAsyncReduceOp_t handle{};
         LOG(DEBUG) << "pcclAllReduceMultipleWithRetry: "
-                << "Launching async reduce operation for index " << i;
-        PCCL_ERR_PROPAGATE(pcclAllReduceAsync(
-            op_descriptor.sendbuf,
-            op_descriptor.recvbuf,
-            &op_descriptor.descriptor,
-            communicator,
-            &handle
-        ));
+                   << "Launching async reduce operation for index " << i;
+        PCCL_ERR_PROPAGATE(pcclAllReduceAsync(op_descriptor.sendbuf, op_descriptor.recvbuf, &op_descriptor.descriptor,
+                                              communicator, &handle));
         reduce_handles[i] = handle;
 
         in_flight++;
@@ -407,17 +413,13 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
                 }
 
                 const pcclReduceOpDescriptor_t &op_descriptor = descriptors[i];
+                VALIDATE_SUPPORTED_INPUT_DATA_TYPE(op_descriptor.descriptor.src_descriptor.datatype);
 
                 LOG(DEBUG) << "pcclAllReduceMultipleWithRetry: "
-                        << "Launching async reduce operation for index " << i;
+                           << "Launching async reduce operation for index " << i;
                 pcclAsyncReduceOp_t handle{};
-                PCCL_ERR_PROPAGATE(pcclAllReduceAsync(
-                    op_descriptor.sendbuf,
-                    op_descriptor.recvbuf,
-                    &op_descriptor.descriptor,
-                    communicator,
-                    &handle
-                ));
+                PCCL_ERR_PROPAGATE(pcclAllReduceAsync(op_descriptor.sendbuf, op_descriptor.recvbuf,
+                                                      &op_descriptor.descriptor, communicator, &handle));
                 reduce_handles[i] = handle;
 
                 in_flight++;
@@ -442,14 +444,14 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
 
             // we are at the max in-flight limit, so we need to wait for one of the operations to finish
             LOG(DEBUG) << "pcclAllReduceMultipleWithRetry: "
-                    << "Awaiting async reduce operation for index " << i << "...";
+                       << "Awaiting async reduce operation for index " << i << "...";
             pcclReduceInfo_t reduce_info{};
             const pcclResult_t reduce_status = pcclAwaitAsyncReduce(&reduce_handle, &reduce_info);
             PCCL_ERR_PROPAGATE(pcclGetAttribute(communicator, PCCL_ATTRIBUTE_PEER_GROUP_WORLD_SIZE, &local_world_size));
 
             if (reduce_status != pcclSuccess) {
                 LOG(WARN) << "pcclAllReduceMultipleWithRetry: "
-                        << "Async reduce operation failed with status: " << reduce_status << ". Retrying...";
+                          << "Async reduce operation failed with status: " << reduce_status << ". Retrying...";
                 reduce_handles[i] = std::nullopt;
 
                 LOG(DEBUG) << "Waiting for all in-flight operations to finish before retrying...";
@@ -492,15 +494,15 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
 
     if (reduce_info_out != nullptr) {
         *reduce_info_out = pcclReduceInfo_t{
-            .local_world_size = static_cast<uint32_t>(local_world_size),
-            .tx_bytes = total_tx,
-            .rx_bytes = total_rx,
+                .local_world_size = static_cast<uint32_t>(local_world_size),
+                .tx_bytes = total_tx,
+                .rx_bytes = total_rx,
         };
     }
 
     if (local_world_size == 1) {
-        LOG(DEBUG) <<
-                "pcclAllReduceMultipleWithRetry: Local world size has dropped to 1. Awaiting all pending handles and reporting 'Too few peers'...";
+        LOG(DEBUG) << "pcclAllReduceMultipleWithRetry: Local world size has dropped to 1. Awaiting all pending handles "
+                      "and reporting 'Too few peers'...";
         // if we are alone, just finalize all handles and return
         for (size_t i = 0; i < count; ++i) {
             const auto &reduce_handle_opt = reduce_handles[i];
@@ -516,6 +518,8 @@ pcclResult_t pcclAllReduceMultipleWithRetry(const pcclReduceOpDescriptor_t *desc
 
 inline size_t pcclDataTypeSize(const pcclDataType_t datatype) {
     switch (datatype) {
+        case pcclUint4:
+            throw std::runtime_error("pcclDataTypeSize: pcclUint4 size query is not supported");
         case pcclUint8:
         case pcclInt8:
             return 1;
@@ -565,12 +569,10 @@ pcclResult_t pcclSynchronizeSharedState(const pcclComm_t *communicator, pcclShar
     }
     // sync shared state
     ccoip_shared_state_t shared_state_internal{
-        .sync_strategy = sync_strategy,
-        .revision = shared_state->revision,
-        .entries = {}
-    };
+            .sync_strategy = sync_strategy, .revision = shared_state->revision, .entries = {}};
     for (size_t i = 0; i < shared_state->count; ++i) {
         const pcclTensorInfo_t &entry = shared_state->infos[i];
+        VALIDATE_SUPPORTED_INPUT_DATA_TYPE(entry.datatype);
         const size_t entry_bytes = entry.count * pcclDataTypeSize(entry.datatype);
         auto ccoip_data_type = getCCoIPDataType(entry.datatype);
         if (!ccoip_data_type) {
@@ -583,20 +585,19 @@ pcclResult_t pcclSynchronizeSharedState(const pcclComm_t *communicator, pcclShar
 
 #ifndef PCCL_HAS_CUDA_SUPPORT
         if (device_type == pcclDeviceCuda) {
-            LOG(WARN) <<
-                    "PCCL is not built with CUDA support. Please use a cuda-enabled distribution of PCCL to use cuda tensors with PCCL!";
+            LOG(WARN) << "PCCL is not built with CUDA support. Please use a cuda-enabled distribution of PCCL to use "
+                         "cuda tensors with PCCL!";
             return pcclInvalidArgument;
         }
 #endif
 
-        shared_state_internal.entries.push_back(ccoip_shared_state_entry_t{
-            .key = entry.name,
-            .data_type = *ccoip_data_type,
-            .device_type = *device_type,
-            .data_ptr = entry.data,
-            .data_size = entry_bytes,
-            .allow_content_inequality = entry.allow_content_inequality
-        });
+        shared_state_internal.entries.push_back(
+                ccoip_shared_state_entry_t{.key = entry.name,
+                                           .data_type = *ccoip_data_type,
+                                           .device_type = *device_type,
+                                           .data_ptr = entry.data,
+                                           .data_size = entry_bytes,
+                                           .allow_content_inequality = entry.allow_content_inequality});
     }
     ccoip_shared_state_sync_info_t info{};
     if (!communicator->ccoip_client->syncSharedState(shared_state_internal, info)) {
@@ -608,8 +609,8 @@ pcclResult_t pcclSynchronizeSharedState(const pcclComm_t *communicator, pcclShar
 
     if (sync_info_out != nullptr) {
         *sync_info_out = pcclSharedStateSyncInfo_t{
-            .tx_bytes = info.tx_bytes,
-            .rx_bytes = info.rx_bytes,
+                .tx_bytes = info.tx_bytes,
+                .rx_bytes = info.rx_bytes,
         };
     }
     return pcclSuccess;
@@ -622,7 +623,7 @@ struct pcclMasterInstanceState_t {
 pcclResult_t pcclCreateMaster(ccoip_socket_address_t listen_address, pcclMasterInstance_t **p_master_handle_out) {
     PCCL_VALIDATE(p_master_handle_out != nullptr, pcclInvalidArgument);
     *p_master_handle_out = new pcclMasterInstance_t{
-        .master_handler = std::make_unique<ccoip::CCoIPMaster>(listen_address),
+            .master_handler = std::make_unique<ccoip::CCoIPMaster>(listen_address),
     };
     return pcclSuccess;
 }

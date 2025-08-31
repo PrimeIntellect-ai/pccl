@@ -128,8 +128,8 @@ def all_reduce_multiple_with_retry(communicator: Communicator,
         )
         # Example uses min-max quantization to demonstrate concurrency
         quant_desc = QuantizationOptions(
-            quantized_datatype=DataType.FLOAT,
-            algorithm=QuantizationAlgorithm.NONE
+            quantized_datatype=DataType.UINT4,
+            algorithm=QuantizationAlgorithm.ZERO_POINT_SCALE
         )
         return communicator.all_reduce_async(
             x, x,

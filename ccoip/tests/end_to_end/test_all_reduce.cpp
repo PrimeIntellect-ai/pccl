@@ -11,6 +11,7 @@
 #include <atomic>
 #include <functional>
 #include <span>
+#include <cmath>
 
 // Helper function to establish p2p connection between two clients
 static void establishConnections(const std::vector<ccoip::CCoIPClient *> &clients) {
@@ -221,6 +222,118 @@ void reduceTest(const ccoip::ccoip_reduce_op_t reduce_op,
     for (const auto &client: clients) {
         ASSERT_TRUE(client->join());
     }
+    ASSERT_TRUE(master.interrupt());
+    ASSERT_TRUE(master.join());
+}
+
+static void runUint4NormalAvgQuantizedTest(size_t num_clients,
+                                           size_t n_elements,
+                                           uint64_t seed,
+                                           float eps,
+                                           float value_bound,
+                                           bool use_src_eq_dst)
+{
+    GUARD_PORT(CCOIP_PROTOCOL_PORT_MASTER);
+
+    using ValueType = float; // fp32 inputs
+    const auto src_type = ccoip::ccoipFloat;
+    const auto qtype    = ccoip::ccoipUint4; // 4-bit quantization on the wire
+
+    // Launch master
+    ccoip::CCoIPMaster master({
+        .inet = {.protocol = inetIPv4, .ipv4 = {.data = {0, 0, 0, 0}}},
+        .port = CCOIP_PROTOCOL_PORT_MASTER
+    });
+    ASSERT_TRUE(master.launch());
+
+    // Create clients
+    std::vector<std::unique_ptr<ccoip::CCoIPClient>> clients;
+    clients.reserve(num_clients);
+    for (size_t i = 0; i < num_clients; ++i) {
+        clients.emplace_back(std::make_unique<ccoip::CCoIPClient>(ccoip_socket_address_t{
+            .inet = {.protocol = inetIPv4, .ipv4 = {.data = {127, 0, 0, 1}}},
+            .port = CCOIP_PROTOCOL_PORT_MASTER
+        }, 0, 1));
+    }
+
+    // Establish connections
+    std::vector<ccoip::CCoIPClient*> client_ptrs;
+    client_ptrs.reserve(num_clients);
+    for (auto &c : clients) client_ptrs.push_back(c.get());
+    establishConnections(client_ptrs);
+
+    // Allocate and fill inputs with N(0,1)
+    std::vector<std::unique_ptr<ValueType[]>> inputs(num_clients);
+    for (size_t c = 0; c < num_clients; ++c) inputs[c] = std::make_unique<ValueType[]>(n_elements);
+
+    {
+        std::mt19937 gen(seed);
+        std::normal_distribution<ValueType> dist(static_cast<ValueType>(0.0), static_cast<ValueType>(1.0));
+        for (size_t i = 0; i < n_elements; ++i) {
+            for (size_t c = 0; c < num_clients; ++c) {
+                inputs[c][i] = dist(gen);
+            }
+        }
+    }
+
+    // Expected result: elementwise average across clients (fp32)
+    std::unique_ptr<ValueType[]> expected(new ValueType[n_elements]);
+    for (size_t i = 0; i < n_elements; ++i) {
+        ValueType acc = 0;
+        for (size_t c = 0; c < num_clients; ++c) acc += inputs[c][i];
+        expected[i] = acc / static_cast<ValueType>(num_clients);
+    }
+
+    // Launch quantized AVG all-reduce on each client
+    std::vector<std::unique_ptr<ValueType[]>> results(num_clients);
+    for (size_t c = 0; c < num_clients; ++c) {
+        auto &client = clients[c];
+        client->setMainThread(std::this_thread::get_id());
+
+        if (!use_src_eq_dst) {
+            results[c] = std::make_unique<ValueType[]>(n_elements);
+            std::fill_n(results[c].get(), n_elements, static_cast<ValueType>(0));
+            ASSERT_TRUE(client->allReduceAsync(inputs[c].get(),
+                                               results[c].get(),
+                                               n_elements,
+                                               src_type,
+                                               qtype, // wire dtype: uint4
+                                               ccoip::ccoipQuantizationZeroPointScale,
+                                               ccoip::ccoipOpAvg,
+                                               1));
+        } else {
+            // In-place variant: src == dst
+            results[c] = std::make_unique<ValueType[]>(n_elements);
+            std::memcpy(results[c].get(), inputs[c].get(), n_elements * sizeof(ValueType));
+            ASSERT_TRUE(client->allReduceAsync(results[c].get(),
+                                               results[c].get(),
+                                               n_elements,
+                                               src_type,
+                                               qtype,
+                                               ccoip::ccoipQuantizationZeroPointScale,
+                                               ccoip::ccoipOpAvg,
+                                               1));
+        }
+    }
+
+    // Wait for completion
+    for (size_t c = 0; c < num_clients; ++c) {
+        ASSERT_TRUE(clients[c]->joinAsyncReduce(1));
+    }
+
+    // Validate: finite, bounded, and within epsilon of expected
+    for (size_t c = 0; c < num_clients; ++c) {
+        for (size_t i = 0; i < n_elements; ++i) {
+            const ValueType v = results[c][i];
+            EXPECT_TRUE(std::isfinite(v));
+            EXPECT_LT(std::fabs(v), value_bound);
+            EXPECT_NEAR(v, expected[i], eps) << "Mismatch at index " << i << " for client " << c;
+        }
+    }
+
+    // Clean shutdown
+    for (const auto &client : clients) ASSERT_TRUE(client->interrupt());
+    for (const auto &client : clients) ASSERT_TRUE(client->join());
     ASSERT_TRUE(master.interrupt());
     ASSERT_TRUE(master.join());
 }
@@ -882,6 +995,27 @@ TEST(AllReduceTest, TestMultipleConcurrentAllReducesSameTagFail) {
 
     ASSERT_TRUE(master.interrupt());
     ASSERT_TRUE(master.join());
+}
+
+TEST(QuantizedUint4AllReduceTest, AvgWorldSize32_NormalDist_fp32) {
+    // High world size so averaging reduces quantization noise; moderate tensor size.
+    // Epsilon chosen to be tolerant of 4-bit quantization while still constraining accuracy.
+    runUint4NormalAvgQuantizedTest(/*num_clients=*/32,
+                                   /*n_elements=*/256,
+                                   /*seed=*/1337,
+                                   /*eps=*/0.5f,
+                                   /*value_bound=*/6.0f,
+                                   /*use_src_eq_dst=*/false);
+}
+
+TEST(QuantizedUint4AllReduceTest, AvgWorldSize32_NormalDist_fp32_SrcPtrEqDstPtr) {
+    // In-place variant exercises src==dst path with the same constraints.
+    runUint4NormalAvgQuantizedTest(/*num_clients=*/32,
+                                   /*n_elements=*/256,
+                                   /*seed=*/424242,
+                                   /*eps=*/0.5f,
+                                   /*value_bound=*/6.0f,
+                                   /*use_src_eq_dst=*/true);
 }
 
 int main() {

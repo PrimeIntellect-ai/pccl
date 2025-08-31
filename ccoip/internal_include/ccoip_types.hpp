@@ -1,23 +1,25 @@
 #pragma once
 
-#include <cstdint>
 #include <array>
+#include <c++/12/stdexcept>
+#include <cstdint>
 #include <string>
 
 namespace ccoip {
     enum ccoip_data_type_t {
-        ccoipUint8 = 0,
-        ccoipInt8 = 1,
-        ccoipUint16 = 2,
-        ccoipUint32 = 3,
-        ccoipInt16 = 4,
-        ccoipInt32 = 5,
-        ccoipUint64 = 6,
-        ccoipInt64 = 7,
-        ccoipFloat16 = 8,
-        ccoipBFloat16 = 9,
-        ccoipFloat = 10,
-        ccoipDouble = 11,
+        ccoipUint4 = 0, // only supported for quantization
+        ccoipUint8 = 1,
+        ccoipInt8 = 2,
+        ccoipUint16 = 3,
+        ccoipUint32 = 4,
+        ccoipInt16 = 5,
+        ccoipInt32 = 6,
+        ccoipUint64 = 7,
+        ccoipInt64 = 8,
+        ccoipFloat16 = 9,
+        ccoipBFloat16 = 10,
+        ccoipFloat = 11,
+        ccoipDouble = 12,
     };
 
     enum ccoip_device_type_t {
@@ -46,6 +48,8 @@ namespace ccoip {
 
     [[nodiscard]] inline size_t ccoip_data_type_size(const ccoip_data_type_t datatype) {
         switch (datatype) {
+            case ccoipUint4:
+                throw std::runtime_error("ccoipUint4 does not have a byte size");
             case ccoipUint8:
             case ccoipInt8:
                 return 1;
@@ -62,6 +66,30 @@ namespace ccoip {
             case ccoipInt64:
             case ccoipDouble:
                 return 8;
+        }
+        return 0;
+    }
+
+    [[nodiscard]] inline size_t ccoip_data_type_size_bits(const ccoip_data_type_t datatype) {
+        switch (datatype) {
+            case ccoipUint4:
+                return 4;
+            case ccoipUint8:
+            case ccoipInt8:
+                return 8;
+            case ccoipUint16:
+            case ccoipInt16:
+            case ccoipFloat16:
+            case ccoipBFloat16:
+                return 16;
+            case ccoipUint32:
+            case ccoipInt32:
+            case ccoipFloat:
+                return 32;
+            case ccoipUint64:
+            case ccoipInt64:
+            case ccoipDouble:
+                return 64;
         }
         return 0;
     }

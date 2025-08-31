@@ -133,6 +133,11 @@ DeQuantizationMetaData ccoip::internal::quantize::performMinMaxQuantization(
             {{ccoipDouble, ccoipUint64}, make_quantfn(&minMaxQuant<uint64_t, double>)},
     };
 
+    if (quantized_type == ccoipUint4) {
+        LOG(FATAL) << "Uint4 quantization is not supported when using min-max quantization.";
+        return DeQuantizationMetaData{};
+    }
+
     const DtypeVariant key{data_type, quantized_type};
     const auto it = minmax_map.find(key);
     if (it == minmax_map.end()) {
