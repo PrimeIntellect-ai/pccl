@@ -15,10 +15,11 @@ namespace ccoip::internal {
         switch (type) {
             case ccoipUint2:
                 return piquant::dtype::uint2;
-            case ccoipUint8:
-                return piquant::dtype::uint8;
             case ccoipUint4:
                 return piquant::dtype::uint4;
+            case ccoipInt8:
+            case ccoipUint8:
+                return piquant::dtype::uint8;
             case ccoipFloat:
                 return piquant::dtype::f32;
             case ccoipBFloat16:
