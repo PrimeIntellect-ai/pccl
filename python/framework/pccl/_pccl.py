@@ -115,6 +115,7 @@ class SharedStateSyncStrategy(Enum):
 
 class DataType(Enum):
     """PCCL primitive data types."""
+    UINT2 = C.pcclUint2
     UINT4 = C.pcclUint4
     UINT8 = C.pcclUint8
     INT8 = C.pcclInt8

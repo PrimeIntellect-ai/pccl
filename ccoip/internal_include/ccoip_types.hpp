@@ -7,19 +7,20 @@
 
 namespace ccoip {
     enum ccoip_data_type_t {
-        ccoipUint4 = 0, // only supported for quantization
-        ccoipUint8 = 1,
-        ccoipInt8 = 2,
-        ccoipUint16 = 3,
-        ccoipUint32 = 4,
-        ccoipInt16 = 5,
-        ccoipInt32 = 6,
-        ccoipUint64 = 7,
-        ccoipInt64 = 8,
-        ccoipFloat16 = 9,
-        ccoipBFloat16 = 10,
-        ccoipFloat = 11,
-        ccoipDouble = 12,
+        ccoipUint2 = 0, // only supported for quantization
+        ccoipUint4 = 1, // only supported for quantization
+        ccoipUint8 = 2,
+        ccoipInt8 = 3,
+        ccoipUint16 = 4,
+        ccoipUint32 = 5,
+        ccoipInt16 = 6,
+        ccoipInt32 = 7,
+        ccoipUint64 = 8,
+        ccoipInt64 = 9,
+        ccoipFloat16 = 10,
+        ccoipBFloat16 = 11,
+        ccoipFloat = 12,
+        ccoipDouble = 13,
     };
 
     enum ccoip_device_type_t {
@@ -48,6 +49,8 @@ namespace ccoip {
 
     [[nodiscard]] inline size_t ccoip_data_type_size(const ccoip_data_type_t datatype) {
         switch (datatype) {
+            case ccoipUint2:
+                throw std::runtime_error("ccoipUint2 does not have a byte size");
             case ccoipUint4:
                 throw std::runtime_error("ccoipUint4 does not have a byte size");
             case ccoipUint8:
@@ -72,6 +75,8 @@ namespace ccoip {
 
     [[nodiscard]] inline size_t ccoip_data_type_size_bits(const ccoip_data_type_t datatype) {
         switch (datatype) {
+            case ccoipUint2:
+                return 2;
             case ccoipUint4:
                 return 4;
             case ccoipUint8:
@@ -94,7 +99,7 @@ namespace ccoip {
         return 0;
     }
 
-    template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T> > >
+    template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
     [[nodiscard]]
     constexpr ccoip_data_type_t ccoip_data_type_from_type() {
         if constexpr (std::is_same_v<T, std::int8_t>) {
@@ -122,7 +127,7 @@ namespace ccoip {
         }
         return ccoipUint8;
     }
-};
+}; // namespace ccoip
 
 
 constexpr std::size_t CCOIP_UUID_N_BYTES = 16;
@@ -133,13 +138,9 @@ typedef uint8_t boolean;
 struct ccoip_uuid_t {
     ccoip_uuid data;
 
-    friend bool operator==(const ccoip_uuid_t &lhs, const ccoip_uuid_t &rhs) {
-        return lhs.data == rhs.data;
-    }
+    friend bool operator==(const ccoip_uuid_t &lhs, const ccoip_uuid_t &rhs) { return lhs.data == rhs.data; }
 
-    friend bool operator!=(const ccoip_uuid_t &lhs, const ccoip_uuid_t &rhs) {
-        return !(lhs == rhs);
-    }
+    friend bool operator!=(const ccoip_uuid_t &lhs, const ccoip_uuid_t &rhs) { return !(lhs == rhs); }
 };
 
 static_assert(sizeof(ccoip_uuid_t) == 16);

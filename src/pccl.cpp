@@ -1,8 +1,10 @@
 #include "pccl.h"
+#include <c++/12/numeric>
 #include <ccoip_master.hpp>
 #include <optional>
 #include <pccl_log.hpp>
 #include <unordered_set>
+
 #include "pccl_internal.hpp"
 
 static constinit bool pccl_initialized = false;
@@ -13,8 +15,8 @@ static constinit bool pccl_initialized = false;
     }
 
 #define VALIDATE_SUPPORTED_INPUT_DATA_TYPE(dtype)                                                                      \
-    if (dtype == pcclUint4) {                                                                                          \
-        LOG(ERR) << "pccl: pcclUint4 is not supported as input data type";                                             \
+    if (dtype == pcclUint2 || dtype == pcclUint4) {                                                                    \
+        LOG(ERR) << "pccl: pcclUint2/4 is not supported as input data type";                                           \
         return pcclInvalidArgument;                                                                                    \
     }
 
@@ -116,6 +118,8 @@ failure:
 
 static std::optional<ccoip::ccoip_data_type_t> getCCoIPDataType(const pcclDataType_t datatype) {
     switch (datatype) {
+        case pcclUint2:
+            return ccoip::ccoipUint2;
         case pcclUint4:
             return ccoip::ccoipUint4;
         case pcclUint8:
@@ -272,14 +276,20 @@ pcclResult_t pcclAllReduceAsync(const void *sendbuff, void *recvbuff, const pccl
     }
 
     // uint4 is only supported with zero-point-scale quantization
-    if (quantized_datatype == pcclUint4 && quantization_algorithm != pcclQuantZeroPointScale) {
+    if ((quantized_datatype == pcclUint2 || quantized_datatype == pcclUint4) &&
+        quantization_algorithm != pcclQuantZeroPointScale) {
         return pcclInvalidArgument;
     }
 
-    // for uint4, the count must be even since we want to guarantee that it is possible to split the data chunks of even
-    // size, which is required such that each chunk start is byte-aligned
-    if (quantized_datatype == pcclUint4 && descriptor->count % 2 != 0) {
-        return pcclInvalidArgument;
+    if (quantized_datatype == pcclUint2 || quantized_datatype == pcclUint4) {
+        const size_t bits = (quantized_datatype == pcclUint2) ? 2 : 4;
+        const size_t pack = 8 / std::gcd<size_t>(bits, static_cast<size_t>(8)); // 4->2, 2->4, 1->8
+        if (count % pack != 0) {
+            LOG(ERR) << "pcclAllReduceAsync: For pcclUint2/4 quantized datatype, the count must be a multiple of "
+                        "8/(datatype bits). Got count="
+                     << count << ", datatype=" << quantized_datatype;
+            return pcclInvalidArgument;
+        }
     }
 
     VALIDATE_SUPPORTED_INPUT_DATA_TYPE(datatype);

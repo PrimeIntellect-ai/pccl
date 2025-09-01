@@ -36,19 +36,20 @@ typedef enum pcclResult_t {
 } pcclResult_t;
 
 typedef enum pcclDataType_t {
-    pcclUint4 = 0,
-    pcclUint8 = 1,
-    pcclInt8 = 2,
-    pcclInt16 = 3,
-    pcclUint16 = 4,
-    pcclUint32 = 5,
-    pcclInt32 = 6,
-    pcclUint64 = 7,
-    pcclInt64 = 8,
-    pcclFloat16 = 9,
-    pcclBFloat16 = 10,
-    pcclFloat = 11,
-    pcclDouble = 12
+    pcclUint2 = 0,
+    pcclUint4 = 1,
+    pcclUint8 = 2,
+    pcclInt8 = 3,
+    pcclInt16 = 4,
+    pcclUint16 = 5,
+    pcclUint32 = 6,
+    pcclInt32 = 7,
+    pcclUint64 = 8,
+    pcclInt64 = 9,
+    pcclFloat16 = 10,
+    pcclBFloat16 = 11,
+    pcclFloat = 12,
+    pcclDouble = 13
 } pcclDataType_t;
 
 typedef enum pcclDeviceType_t {

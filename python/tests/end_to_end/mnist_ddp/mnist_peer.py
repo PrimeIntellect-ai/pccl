@@ -67,7 +67,7 @@ class NeuralNet(nn.Module):
         self.relu = nn.ReLU()
         self.fcs = nn.ModuleList(
             [nn.Linear(hidden_sizes[i], hidden_sizes[i + 1]) for i in range(len(hidden_sizes) - 1)])
-        self.fc2 = nn.Linear(hidden_sizes[-1], num_classes)
+        self.fc2 = nn.Linear(hidden_sizes[-1], num_classes, bias=False)
 
     def forward(self, x):
         x = x.view(-1, input_size)  # Flatten the image
@@ -128,7 +128,7 @@ def all_reduce_multiple_with_retry(communicator: Communicator,
         )
         # Example uses min-max quantization to demonstrate concurrency
         quant_desc = QuantizationOptions(
-            quantized_datatype=DataType.UINT4,
+            quantized_datatype=DataType.UINT2,
             algorithm=QuantizationAlgorithm.ZERO_POINT_SCALE
         )
         return communicator.all_reduce_async(

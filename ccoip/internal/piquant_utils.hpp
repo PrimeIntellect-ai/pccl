@@ -13,6 +13,8 @@ namespace ccoip::internal {
 
     [[nodiscard]] inline std::optional<piquant::dtype> get_piquant_dtype(const ccoip_data_type_t type) {
         switch (type) {
+            case ccoipUint2:
+                return piquant::dtype::uint2;
             case ccoipUint8:
                 return piquant::dtype::uint8;
             case ccoipUint4:
