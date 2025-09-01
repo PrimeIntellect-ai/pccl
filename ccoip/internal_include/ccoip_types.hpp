@@ -1,7 +1,7 @@
 #pragma once
 
 #include <array>
-#include <c++/12/stdexcept>
+#include <stdexcept>
 #include <cstdint>
 #include <string>
 
