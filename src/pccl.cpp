@@ -292,6 +292,11 @@ pcclResult_t pcclAllReduceAsync(const void *sendbuff, void *recvbuff, const pccl
         }
     }
 
+    if (datatype == pcclUint2 || datatype == pcclUint4) {
+        LOG(ERR) << "pcclAllReduceAsync: pcclUint2/4 is not supported as input data type";
+        return pcclInvalidArgument;
+    }
+
     VALIDATE_SUPPORTED_INPUT_DATA_TYPE(datatype);
 
     int local_world_size{};
