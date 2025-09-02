@@ -407,19 +407,38 @@ void performReduction(const std::span<std::byte> &dst,
                         zp,
                         piquant::reduce_op::add);
                 } else {
+                    if (ccoip::ccoip_data_type_size_bits(src_type) < 8) {
+                        throw std::runtime_error("pi-quant does not support the following data type combination: src_type=" + std::to_string(src_type) +
+                                                 ", dst_type=" + std::to_string(dst_type) +
+                                                 " with zero-point scale quantization. Quantization with bit-size < 8 is not possible.");
+                    }
                     doReduceDataType<Sum>(dst, src, dst_type, src_type, ccoip::ccoipQuantizationNone, meta_data);
                 }
             } else {
+                if (ccoip::ccoip_data_type_size_bits(src_type) < 8) {
+                    throw std::runtime_error("pi-quant does not support the following data type combination: src_type=" + std::to_string(src_type) +
+                                             ", dst_type=" + std::to_string(dst_type) +
+                                             " with zero-point scale quantization. Quantization with bit-size < 8 is not possible.");
+                }
                 doReduceDataType<Sum>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
             }
             break;
         case ccoip::ccoipOpProd:
+            if (ccoip::ccoip_data_type_size_bits(src_type) < 8) {
+                throw std::runtime_error("Operation OpProd not supported for src_type with bit-size < 8. src_type=" + std::to_string(src_type));
+            }
             doReduceDataType<Prod>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
             break;
         case ccoip::ccoipOpMax:
+            if (ccoip::ccoip_data_type_size_bits(src_type) < 8) {
+                throw std::runtime_error("Operation OpMax not supported for src_type with bit-size < 8. src_type=" + std::to_string(src_type));
+            }
             doReduceDataType<Max>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
             break;
         case ccoip::ccoipOpMin:
+            if (ccoip::ccoip_data_type_size_bits(src_type) < 8) {
+                throw std::runtime_error("Operation OpMin not supported for src_type with bit-size < 8. src_type=" + std::to_string(src_type));
+            }
             doReduceDataType<Min>(dst, src, dst_type, src_type, quantization_algorithm, meta_data);
             break;
         default:
