@@ -79,6 +79,7 @@ struct SendQueueEntry {
 
 #define TXRX_QUEUE_DEPTH 1024
 #define POOLED_ALLOCATOR_MAX_ENTRIES 128
+#define DISABLE_POOLED_ALLOCATOR 1
 
 namespace tinysockets {
     // Note: this allocator can be this stupid because our sizes are
@@ -90,6 +91,9 @@ namespace tinysockets {
 
     public:
         void *allocate(const size_t size) {
+#if DISABLE_POOLED_ALLOCATOR
+            return new std::byte[size];
+#else
             std::unique_lock lock(mutex);
             for (auto it = pool.begin(); it != pool.end(); ++it) {
                 if (it->second >= size) {
@@ -100,9 +104,14 @@ namespace tinysockets {
             }
             void *ptr = new std::byte[size];
             return ptr;
+#endif
+
         }
 
         void release(const void *ptr, size_t size) {
+#if DISABLE_POOLED_ALLOCATOR
+            return delete[] static_cast<const std::byte *>(ptr);
+#else
             if (ptr == nullptr) {
                 LOG(BUG) << "[MultiplexedIOSocket::PooledAllocator] Attempting to release nullptr";
                 return;
@@ -115,6 +124,7 @@ namespace tinysockets {
                 pool.erase(begin);
             }
             pool.emplace_back(const_cast<void *>(ptr), size);
+#endif
         }
 
         ~PooledAllocator() {

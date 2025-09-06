@@ -453,7 +453,8 @@ namespace {
         return {true, false};
     }
 
-#define POOLED_ALLOCATOR_MAX_ENTRIES 1024
+#define POOLED_ALLOCATOR_MAX_ENTRIES 256
+#define DISABLE_POOLED_ALLOCATOR 1
 
     class PooledAllocator {
         std::vector<std::pair<void *, size_t>> pool;
@@ -461,6 +462,9 @@ namespace {
 
     public:
         void *allocate(const size_t size) {
+#if DISABLE_POOLED_ALLOCATOR
+            return new std::byte[size];
+#else
             std::unique_lock lock(mutex);
             for (auto it = pool.begin(); it != pool.end(); ++it) {
                 if (it->second >= size) {
@@ -471,9 +475,14 @@ namespace {
             }
             auto *ptr = new std::byte[size];
             return ptr;
+#endif
         }
 
         void release(const void *ptr, size_t size) {
+#if DISABLE_POOLED_ALLOCATOR
+            delete[] static_cast<const std::byte *>(ptr);
+            return;
+#else
             if (ptr == nullptr) {
                 LOG(BUG) << "[reduce::PooledAllocator] Attempting to release nullptr";
                 return;
@@ -486,6 +495,7 @@ namespace {
                 pool.erase(begin);
             }
             pool.emplace_back(const_cast<void *>(ptr), size);
+#endif
         }
 
         ~PooledAllocator() {
