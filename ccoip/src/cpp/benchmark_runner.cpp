@@ -63,8 +63,8 @@ double ccoip::NetworkBenchmarkRunner::getOutputBandwidthMbitsPerSecond() {
 
 ccoip::NetworkBenchmarkRunner::BenchmarkResult
 ccoip::NetworkBenchmarkRunner::launchBenchmark(const int connection_number) {
-    LOG(INFO) << "Launching Benchmark Thread [" << (connection_number + 1) << "/" << num_benchmark_connections << "] for "
-              << ccoip_sockaddr_to_str(benchmark_endpoint) << "...";
+    LOG(INFO) << "Launching Benchmark Thread [" << (connection_number + 1) << "/" << num_benchmark_connections
+              << "] for " << ccoip_sockaddr_to_str(benchmark_endpoint) << "...";
     auto socket = std::make_unique<tinysockets::BlockingIOSocket>(benchmark_endpoint);
 
     if (!socket->establishConnection()) {
@@ -112,17 +112,38 @@ ccoip::NetworkBenchmarkRunner::launchBenchmark(const int connection_number) {
         size_t total_bytes_sent = 0;
 
         const auto start_time = std::chrono::high_resolution_clock::now();
-        while (std::chrono::high_resolution_clock::now() - start_time < std::chrono::seconds(BENCHMARK_LENGTH_SECONDS)) {
-            // send data
-            const auto n_sent = sendvp(socket_fd, buffer.get(), send_buffer_size, MSG_NOSIGNAL);
-            if (n_sent < 0) {
-                if (errno == 0) {
+        while (true) {
+            const auto now = std::chrono::high_resolution_clock::now();
+            if (now - start_time >= std::chrono::seconds(BENCHMARK_LENGTH_SECONDS)) {
+                break;
+            }
+
+            const auto remaining = std::chrono::seconds(BENCHMARK_LENGTH_SECONDS) - (now - start_time);
+            const int remaining_ms =
+                    static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
+
+            std::vector descriptors = {
+                    tinysockets::poll::PollDescriptor{socket_fd, tinysockets::poll::PollEvent::POLL_OUTPUT},
+            };
+
+            poll(descriptors, remaining_ms);
+            auto &tx_descriptor = descriptors[0];
+            if (!tx_descriptor.hasEvent(tinysockets::poll::PollEvent::POLL_OUTPUT)) {
+                continue;
+            }
+
+            std::span<const std::byte> send_span(reinterpret_cast<const std::byte *>(buffer.get()), send_buffer_size);
+            errno = 0;
+            const auto n_sent = tinysockets::poll::send_nonblocking(send_span, tx_descriptor);
+            if (!n_sent) {
+                if (errno != 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                    LOG(ERR) << "Failed to send data to benchmark server: " << std::strerror(errno);
+                    has_send_failure.store(true, std::memory_order_relaxed);
                     break;
                 }
-                LOG(ERR) << "Failed to send data to benchmark server: " << std::strerror(errno);
-                has_send_failure.store(true, std::memory_order_relaxed);
+                continue;
             }
-            total_bytes_sent += n_sent;
+            total_bytes_sent += *n_sent;
         }
 
         const auto now = std::chrono::high_resolution_clock::now();
@@ -133,7 +154,8 @@ ccoip::NetworkBenchmarkRunner::launchBenchmark(const int connection_number) {
         const auto duration = now - start_time;
         const auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
         const auto duration_seconds = static_cast<double>(duration_us) / 1e6;
-        const auto bandwidth_mbits_per_second = static_cast<double>(total_bytes_sent * 8) / 1e6 / duration_seconds;
+        const auto bandwidth_mbits_per_second =
+                total_bytes_sent > 0 ? static_cast<double>(total_bytes_sent * 8) / 1e6 / duration_seconds : 0;
 
         output_bandwidth_mbps_mutex.lock();
         output_bandwidth_mbps[connection_number] = bandwidth_mbits_per_second;
