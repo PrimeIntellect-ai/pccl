@@ -108,6 +108,8 @@ bool ccoip::CCoIPMasterState::registerClient(const ccoip_socket_address_t &clien
 
 void ccoip::CCoIPMasterState::onPeerAccepted(const ClientInfo &info) {
     const auto uuid = info.client_uuid;
+    const auto addr = info.socket_address.inet;
+    const uint32_t peer_group = info.peer_group;
     int world_size = 0;
     for (const auto &[uuid, info]: client_info) {
         if (info.connection_phase == PEER_ACCEPTED) {
@@ -116,7 +118,7 @@ void ccoip::CCoIPMasterState::onPeerAccepted(const ClientInfo &info) {
     }
     LOG(DEBUG) << "Peer " << uuid_to_string(uuid)
             << " has been accepted (PEER_ACCEPTED). New world size: " << world_size;
-    if (!bandwidth_stores[info.peer_group].registerPeer(uuid)) {
+    if (!bandwidth_store.registerPeer(uuid, addr, peer_group)) {
         LOG(BUG) << "Failed to register bandwidth data for client " << uuid_to_string(uuid)
                 << "; This means the peer was already registered. This is a bug";
     }
@@ -149,10 +151,9 @@ bool ccoip::CCoIPMasterState::unregisterClient(const ccoip_socket_address_t &cli
         const auto peer_uuid = it->second;
 
         if (connection_phase == PEER_ACCEPTED) {
-            if (!bandwidth_stores[peer_group].unregisterPeer(peer_uuid)) {
-                LOG(BUG) << "Failed to unregister bandwidth data for client " << uuid_to_string(peer_uuid)
+            if (!bandwidth_store.unregisterPeer(peer_uuid)) {
+                LOG(ERR) << "Failed to unregister bandwidth data for client " << uuid_to_string(peer_uuid)
                         << "; This means the peer was already unregistered or never registered. This is a bug";
-                return false;
             }
         }
 
@@ -653,9 +654,7 @@ bool ccoip::CCoIPMasterState::endSharedStateSyncPhase(const uint32_t peer_group)
 
 bool ccoip::CCoIPMasterState::endTopologyOptimizationPhase(const bool failed) {
     if (failed) {
-        for (uint32_t peer_group: getExistingPeerGroups()) {
-            bandwidth_stores[peer_group].printBandwidthStore();
-        }
+         bandwidth_store.printBandwidthStore();
     }
     for (auto &[_, info]: client_info) {
         if (info.connection_phase != PEER_ACCEPTED) {
@@ -1256,9 +1255,7 @@ void ccoip::CCoIPMasterState::storePeerBandwidth(const ccoip_uuid_t from, const 
         return;
     }
 
-    const uint32_t peer_group = from_peer_group;
-
-    if (!bandwidth_stores[peer_group].storeBandwidth(from, to, send_bandwidth_mpbs)) {
+    if (!bandwidth_store.storeBandwidth(from, to, send_bandwidth_mpbs)) {
         LOG(BUG) << "Failed to store bandwidth for client " << uuid_to_string(from) << " to " << uuid_to_string(to)
                 << ". This likely means the peer was never registered. This is a bug.";
     }
@@ -1291,8 +1288,7 @@ std::optional<double> ccoip::CCoIPMasterState::getPeerBandwidthMbps(const ccoip_
         return std::nullopt;
     }
 
-    const uint32_t peer_group = from_peer_group;
-    return bandwidth_stores[peer_group].getBandwidthMbps(from, to);
+    return bandwidth_store.getBandwidthMbps(from, to);
 }
 
 std::vector<ccoip::bandwidth_entry> ccoip::CCoIPMasterState::getMissingBandwidthEntries(const ccoip_uuid_t peer) {
@@ -1306,7 +1302,7 @@ std::vector<ccoip::bandwidth_entry> ccoip::CCoIPMasterState::getMissingBandwidth
         peer_group = from_info.peer_group;
     }
 
-    auto missing_entries = bandwidth_stores[peer_group].getMissingBandwidthEntries(peer);
+    auto missing_entries = bandwidth_store.getMissingBandwidthEntries(peer);
 
     // remove bandwidth entries that are considered unreachable
     for (auto it = missing_entries.begin(); it != missing_entries.end();) {
@@ -1362,11 +1358,11 @@ void ccoip::CCoIPMasterState::markBandwidthEntryUnreachable(const uint32_t peer_
 
 
 bool ccoip::CCoIPMasterState::isBandwidthStoreFullyPopulated(const uint32_t peer_group) {
-    return bandwidth_stores[peer_group].isBandwidthStoreFullyPopulated();
+    return bandwidth_store.isBandwidthStoreFullyPopulated();
 }
 
 size_t ccoip::CCoIPMasterState::getNumBandwidthStoreRegisteredPeers(const uint32_t peer_group) {
-    return bandwidth_stores[peer_group].getNumberOfRegisteredPeers();
+    return bandwidth_store.getNumberOfRegisteredPeers();
 }
 
 std::optional<ccoip::CCoIPMasterState::SharedStateMismatchStatus>
@@ -1563,10 +1559,10 @@ bool ccoip::CCoIPMasterState::performTopologyOptimization(
         if (!topology_is_optimal[peer_group]) {
             bool topology_has_improved = false;
             bool topology_is_optimal = false;
-            if (!TopologyOptimizer::ImproveTopologyMoonshot(bandwidth_stores[peer_group], topology, topology_is_optimal,
+            if (!TopologyOptimizer::ImproveTopologyMoonshot(bandwidth_store, topology, topology_is_optimal,
                                                             topology_has_improved)) {
                 LOG(WARN) << "Failed to optimize topology";
-                bandwidth_stores[peer_group].printBandwidthStore();
+                bandwidth_store.printBandwidthStore();
                 return false;
             }
             new_topology = topology;
@@ -1577,9 +1573,9 @@ bool ccoip::CCoIPMasterState::performTopologyOptimization(
         auto topology = getRingTopology(peer_group, false);
         if (!topology_is_optimal[peer_group]) {
             bool topology_is_optimal = false;
-            if (!TopologyOptimizer::OptimizeTopology(bandwidth_stores[peer_group], topology, topology_is_optimal)) {
+            if (!TopologyOptimizer::OptimizeTopology(bandwidth_store, topology, topology_is_optimal)) {
                 LOG(WARN) << "Failed to optimize topology!";
-                bandwidth_stores[peer_group].printBandwidthStore();
+                bandwidth_store.printBandwidthStore();
                 return false;
             }
             new_topology = topology;

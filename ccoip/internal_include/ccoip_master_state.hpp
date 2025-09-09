@@ -389,7 +389,7 @@ namespace ccoip {
         /// Each peer group has a local bandwidth store because topology optimization only makes sense within the scope
         /// of large-scale data transfers happening (shared state synchronization, collective ops), which are defined
         /// to operate only within a particular peer group.
-        std::unordered_map<uint32_t, BandwidthStore> bandwidth_stores{};
+        BandwidthStore bandwidth_store{};
 
         // TODO: THIS IS SUBJECT TO CHANGE:
 

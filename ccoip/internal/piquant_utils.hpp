@@ -19,6 +19,7 @@ namespace ccoip::internal {
                 return piquant::dtype::uint4;
             case ccoipInt8:
             case ccoipUint8:
+                // for quantization, we treat int8 and uint8 the same way
                 return piquant::dtype::uint8;
             case ccoipFloat:
                 return piquant::dtype::f32;

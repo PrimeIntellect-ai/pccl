@@ -63,8 +63,8 @@ double ccoip::NetworkBenchmarkRunner::getOutputBandwidthMbitsPerSecond() {
 
 ccoip::NetworkBenchmarkRunner::BenchmarkResult
 ccoip::NetworkBenchmarkRunner::launchBenchmark(const int connection_number) {
-    LOG(INFO) << "Launching Benchmark Thread [" << (connection_number + 1) << "/" << num_benchmark_connections << "] for "
-              << ccoip_sockaddr_to_str(benchmark_endpoint) << "...";
+    LOG(INFO) << "Launching Benchmark Thread [" << (connection_number + 1) << "/" << num_benchmark_connections
+              << "] for " << ccoip_sockaddr_to_str(benchmark_endpoint) << "...";
     auto socket = std::make_unique<tinysockets::BlockingIOSocket>(benchmark_endpoint);
 
     if (!socket->establishConnection()) {
@@ -112,7 +112,8 @@ ccoip::NetworkBenchmarkRunner::launchBenchmark(const int connection_number) {
         size_t total_bytes_sent = 0;
 
         const auto start_time = std::chrono::high_resolution_clock::now();
-        while (std::chrono::high_resolution_clock::now() - start_time < std::chrono::seconds(BENCHMARK_LENGTH_SECONDS)) {
+        while (std::chrono::high_resolution_clock::now() - start_time <
+               std::chrono::seconds(BENCHMARK_LENGTH_SECONDS)) {
             // send data
             const auto n_sent = sendvp(socket_fd, buffer.get(), send_buffer_size, MSG_NOSIGNAL);
             if (n_sent < 0) {
@@ -134,6 +135,10 @@ ccoip::NetworkBenchmarkRunner::launchBenchmark(const int connection_number) {
         const auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
         const auto duration_seconds = static_cast<double>(duration_us) / 1e6;
         const auto bandwidth_mbits_per_second = static_cast<double>(total_bytes_sent * 8) / 1e6 / duration_seconds;
+
+        LOG(INFO) << "Benchmark Thread [" << (connection_number + 1) << "/" << num_benchmark_connections
+                  << "] completed: Sent " << total_bytes_sent << " bytes in " << duration_seconds
+                  << " seconds. Bandwidth: " << bandwidth_mbits_per_second << " Mbit/s";
 
         output_bandwidth_mbps_mutex.lock();
         output_bandwidth_mbps[connection_number] = bandwidth_mbits_per_second;

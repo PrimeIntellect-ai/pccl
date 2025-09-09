@@ -1,85 +1,104 @@
 #pragma once
 
 #include <ccoip_types.hpp>
+#include <cstdint>
+#include <cstring>
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
+#include "ccoip_inet.h"
+
 namespace ccoip {
+
+    struct InetAddressHash {
+        std::size_t operator()(const ccoip_inet_address_t &a) const noexcept {
+            std::size_t h = std::hash<int>{}(a.protocol);
+            if (a.protocol == inetIPv4) {
+                for (uint8_t b: a.ipv4.data)
+                    h = h * 131u + b;
+            } else {
+                for (uint8_t b: a.ipv6.data)
+                    h = h * 131u + b;
+            }
+            return h;
+        }
+    };
+
+    struct InetAddressEq {
+        bool operator()(const ccoip_inet_address_t &lhs, const ccoip_inet_address_t &rhs) const noexcept {
+            if (lhs.protocol != rhs.protocol)
+                return false;
+            if (lhs.protocol == inetIPv4) {
+                return std::memcmp(lhs.ipv4.data, rhs.ipv4.data, sizeof(lhs.ipv4.data)) == 0;
+            }
+            return std::memcmp(lhs.ipv6.data, rhs.ipv6.data, sizeof(lhs.ipv6.data)) == 0;
+        }
+    };
+
+    using AddressHash = InetAddressHash;
+    using AddressEq = InetAddressEq;
+
+    using AddressBandwidthRow = std::unordered_map<ccoip_inet_address_t, double, AddressHash, AddressEq>;
+    using AddressBandwidthMap = std::unordered_map<ccoip_inet_address_t, AddressBandwidthRow, AddressHash, AddressEq>;
 
     struct bandwidth_entry {
         ccoip_uuid_t from_peer_uuid;
         ccoip_uuid_t to_peer_uuid;
     };
 
+    struct bw_peer_t {
+        ccoip_inet_address_t address;
+        uint32_t group;
+    };
+
     class BandwidthStore {
         /**
-         * Stores the bandwidth matrix.
-         * Logically, we are storing entries (A, B, bandwidth) where A and B are peers and bandwidth is the bandwidth
-         * from A to B. (A -> B) is stored in the entry (A, B) and (B -> A) is stored in the entry (B, A), meaning that
-         * we are storing an asymmetric edge-weighted graph.
-         *
-         * Physically, we are storing a map<uuid, map<uuid, double>> where the outer map maps the send peer to an inner
-         * map that maps the receiving peer to the bandwidth.
-         *
-         * E.g. to obtain the bandwidth value for the edge (A, B), we would access bandwidth_map[A][B] and to obtain the
-         * bandwidth value for the edge (B, A), we would access bandwidth_map[B][A].
-         *
-         * The double value has units of mpbs or mbit/s, meaning that to get MB/s we would need to divide by 8.
-         *
-         * We make the following simplified assertion for sanity purposes that send bandwidth is unaffected by receive
-         * workload. This is a simplification that is not always true in practice, but is reasonable for datacenter
-         * internet traffic.
+         * Stores the bandwidth matrix keyed by inet addresses (not UUIDs).
+         * Multiple peers that share the same inet address reuse the same entries, even across groups.
          */
-        std::unordered_map<ccoip_uuid_t, std::unordered_map<ccoip_uuid_t, double>> bandwidth_map;
+        AddressBandwidthMap bandwidth_map;
 
         /**
-         * Set of all distinct peers that have any entry in the bandwidth map.
+         * All registered peers (uuid -> {address, group}).
          */
-        std::unordered_set<ccoip_uuid_t> registered_peers{};
+        std::unordered_map<ccoip_uuid_t, bw_peer_t> registered_peers{};
+
+        // Helpers: representatives by address within a group, and group address sets
+        [[nodiscard]] std::unordered_map<ccoip_inet_address_t, ccoip_uuid_t, AddressHash, AddressEq>
+        addressRepresentativesForGroup(uint32_t group) const;
 
     public:
         /**
-         * Registers the peer in the bandwidth store. Once a peer is registered, it is expected that bandwidth entries
-         * will be provided for it.
-         * @code getMissingBandwidthEntries @endcode will consider all registered peers when determining missing
-         * entries.
-         * @param peer the peer to register
-         * @return false if the peer was already registered, true otherwise
+         * Registers a peer with its address and group identity.
+         * @param peer uuid of the peer
+         * @param address inet address of the peer
+         * @param group uint32_t group id for the peer
+         * @return false if already registered, true otherwise
          */
-        bool registerPeer(ccoip_uuid_t peer);
+        bool registerPeer(ccoip_uuid_t peer, const ccoip_inet_address_t &address, uint32_t group);
 
         /**
-         * Stores the bandwidth between two peers.
-         * Such an entry is strictly unidirectional, meaning that for both directions A -> B and B -> A, two separate
-         * entries must be stored that may differ in bandwidth.
-         * @param from uuid of the "from" peer
-         * @param to uuid of the "to" peer
-         * @param send_bandwidth_mpbs the bandwidth in mbit/s that the "from" peer can send to the "to" peer. This is
-         * different from what the "to" peer can receive from the "from" peer, which is stored in a separate entry.
+         * Stores the bandwidth between two peers (by their UUIDs), but persists by address pair.
+         * Directional; A->B and B->A are independent. Groups do not restrict storing; edges are global by address.
          */
         [[nodiscard]] bool storeBandwidth(ccoip_uuid_t from, ccoip_uuid_t to, double send_bandwidth_mpbs);
 
         /**
-         * @param from from peer
-         * @param to to peer
-         * @return the bandwidth in mbit/s that the "from" peer can send to the "to" peer. If the bandwidth is not
-         * stored, returns std::nullopt.
+         * Looks up bandwidth by the peers' addresses. Reused across peers/groups that share addresses.
          */
         [[nodiscard]] std::optional<double> getBandwidthMbps(ccoip_uuid_t from, ccoip_uuid_t to) const;
 
         /**
-         * Determines the list of missing bandwidth entries that a particular peer is part of.
-         * @param peer the uuid of the peer
-         * @return the list of bandwidth entries that are missing for the specified peer. This means all edges to and
-         * from the peer to others that are not populated with bandwidth data.
+         * Determines missing bandwidth entries involving the specified peer, considering ONLY peers
+         * in the same group. However, an edge is considered present if any group has already measured
+         * that address pair.
          */
         [[nodiscard]] std::vector<bandwidth_entry> getMissingBandwidthEntries(ccoip_uuid_t peer) const;
 
         /**
-         * @return true if the bandwidth store is fully populated with all possible entries for all registered peers.
-         * false otherwise.
+         * Returns true iff, for every group, all address pairs within that group are populated
+         * (possibly thanks to measurements from other groups).
          */
         [[nodiscard]] bool isBandwidthStoreFullyPopulated() const;
 
@@ -89,17 +108,10 @@ namespace ccoip {
         [[nodiscard]] size_t getNumberOfRegisteredPeers() const;
 
         /**
-         * Unregisters the given peer and deletes all bandwidth data associated with a peer.
-         * When said peer is part of an edge in the bandwidth graph, the edge is removed.
-         * The peer will no longer be considered when determining missing bandwidth entries after this call.
-         * @param peer the uuid of the peer
-         * @return false if the peer was never registered. true otherwise.
+         * Unregisters a peer. Address rows/columns are kept if any peer (in any group) still uses that address.
          */
         [[nodiscard]] bool unregisterPeer(ccoip_uuid_t peer);
 
-        /**
-         * Prints the current bandwidth store as debug log
-         */
         void printBandwidthStore() const;
     };
 } // namespace ccoip
