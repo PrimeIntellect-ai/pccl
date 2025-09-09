@@ -8,7 +8,7 @@
 #include <tinysockets.hpp>
 #include "win_sock_bridge.h"
 
-#define BENCHMARK_LENGTH_SECONDS 10
+#define BENCHMARK_LENGTH_SECONDS 5
 
 #define DEFAULT_SEND_BUFFER_SIZE (8 * (1 << 20)) // 8 MB
 
