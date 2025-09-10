@@ -10,7 +10,7 @@
 
 ccoip::CCoIPMasterHandler::CCoIPMasterHandler(const ccoip_socket_address_t &listen_address) : server_socket(
         listen_address),
-    topology_optimization_threadpool(4, 64) {
+    topology_optimization_threadpool(4, 1024) {
     topology_optimization_threadpool.startup();
 
     server_socket.addReadCallback([this](const ccoip_socket_address_t &client_address, const std::span<uint8_t> &data) {
