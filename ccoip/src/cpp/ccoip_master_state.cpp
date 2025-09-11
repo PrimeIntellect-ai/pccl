@@ -1745,8 +1745,19 @@ bool ccoip::CCoIPMasterState::setRingTopologyUnsafe(const uint32_t peer_group,
                                                     const bool optimal) {
     if (topology_is_optimal[peer_group]) {
         const auto &ring_topology = ring_topologies[peer_group];
+        // if ring size changes, we know its no longer optimal
         if (new_topology.size() != ring_topology.size()) {
             topology_is_optimal[peer_group] = false;
+        }
+        // if the set of peers of the topology changes, we know it's no longer optimal
+        {
+            const auto new_topology_set = std::unordered_set<ccoip_uuid_t>{new_topology.begin(), new_topology.end()};
+            for (const auto &peer_uuid: ring_topology) {
+                if (!new_topology_set.contains(peer_uuid)) {
+                    topology_is_optimal[peer_group] = false;
+                    break;
+                }
+            }
         }
     }
     if (topology_is_optimal[peer_group]) {

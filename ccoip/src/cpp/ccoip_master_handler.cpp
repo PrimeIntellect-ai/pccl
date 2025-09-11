@@ -1382,7 +1382,7 @@ void ccoip::CCoIPMasterHandler::onClientDisconnect(const ccoip_socket_address_t 
 void ccoip::CCoIPMasterHandler::handleEstablishP2PConnections(const ccoip_socket_address_t &client_address,
                                                               const C2MPacketRequestEstablishP2PConnections &packet) {
     THREAD_GUARD(server_thread_id);
-    LOG(DEBUG) << "Received C2MPacketEstablishP2PConnections from " << ccoip_sockaddr_to_str(client_address);
+    LOG(DEBUG) << "Received C2MPacketRequestEstablishP2PConnections from " << ccoip_sockaddr_to_str(client_address);
 
     const auto client_uuid_opt = server_state.findClientUUID(client_address);
     if (!client_uuid_opt) {
