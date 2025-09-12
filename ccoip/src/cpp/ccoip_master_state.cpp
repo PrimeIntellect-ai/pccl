@@ -688,6 +688,9 @@ bool ccoip::CCoIPMasterState::p2pConnectionsEstablishConsensus() const {
             num_connecting_peers++;
         }
     }
+    if (num_voting_peers == 0 && num_connecting_peers == 0) {
+        return false;
+    }
     return num_voting_peers == num_connecting_peers;
 }
 
@@ -1675,7 +1678,7 @@ ccoip::CCoIPMasterState::buildReachableRingTopology(const uint32_t peer_group) {
             // Check if v is NOT in u's unreachable set AND u is NOT in v's unreachable set
             const bool u_reaches_v = unreachability_map[u].contains(v);
             const bool v_reaches_u = unreachability_map[v].contains(u);
-            if (u_reaches_v && v_reaches_u) {
+            if (!u_reaches_v && !v_reaches_u) {
                 // They can reach each other -> add to adjacency
                 adjacency[u].insert(v);
             }
