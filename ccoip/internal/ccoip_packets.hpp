@@ -383,7 +383,7 @@ namespace ccoip {
         static packetId_t packet_id;
         ccoip_uuid_t peer_uuid;
 
-        /// Sequential number in range [0; connection_pool_size[
+        /// Sequential number in range [0; connection_pool_size]
         uint32_t connection_nr;
 
         void serialize(PacketWriteBuffer &buffer) const override;
